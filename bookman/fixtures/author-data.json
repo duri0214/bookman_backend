@@ -2,7 +2,13 @@
   {
     "model": "bookman.author",
     "fields": {
-      "name": "国松俊英(文)、熊谷聡(絵)"
+      "name": "国松俊英"
+    }
+  },
+  {
+    "model": "bookman.author",
+    "fields": {
+      "name": "熊谷聡"
     }
   }
 ]

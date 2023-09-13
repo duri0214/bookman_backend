@@ -49,7 +49,7 @@ class Book(models.Model):
     name = models.CharField('タイトル', max_length=256)
     thumbnail = models.ImageField('サムネイル', blank=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, verbose_name='カテゴリ')
-    author = models.ForeignKey(Author, on_delete=models.PROTECT, verbose_name='著者')
+    authors = models.ManyToManyField(Author, verbose_name='著者')
     lead_text = models.TextField('紹介文')
     amount = models.PositiveSmallIntegerField('数量')
     isbn = models.CharField('ISBNコード', max_length=20)
