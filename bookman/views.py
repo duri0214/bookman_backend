@@ -1,6 +1,11 @@
 from rest_framework import generics
-from .models import Book, Category
-from .serializers import CategorySerializer, BookListSerializer, BookDetailSerializer
+from .models import Book, Category, Branch
+from .serializers import CategorySerializer, BookListSerializer, BookDetailSerializer, BranchListSerializer
+
+
+class BranchList(generics.ListAPIView):
+    queryset = Branch.objects.all().order_by('id')
+    serializer_class = BranchListSerializer
 
 
 class CategoryList(generics.ListAPIView):

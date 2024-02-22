@@ -2,10 +2,10 @@ from rest_framework import serializers
 from bookman.models import Branch, Book, Category, Author
 
 
-class BranchSerializer(serializers.ModelSerializer):
+class BranchListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
-        fields = '__all__'
+        exclude = ('created_at', 'updated_at')
 
 
 class CategorySerializer(serializers.ModelSerializer):
