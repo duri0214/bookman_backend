@@ -5,41 +5,33 @@ from bookman.models import Branch, Book, Category, Author
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = '__all__'
+        fields = ['name', 'color']
 
 
 class AuthorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Author
-        fields = '__all__'
+        fields = ['name']
 
 
-class BranchListSerializer(serializers.ModelSerializer):
+class BranchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
-        exclude = ('created_at', 'updated_at')
+        fields = ['name', 'address', 'phone', 'remark']
 
 
-class BookListSerializer(serializers.ModelSerializer):
-    """
-    本一覧
-    """
+class BookSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     authors = AuthorSerializer(many=True, read_only=True)
 
     class Meta:
         model = Book
-        exclude = ('amount', 'isbn', 'created_at', 'updated_at')
-
-
-class BookDetailSerializer(serializers.ModelSerializer):
-    """
-    本
-    """
-    category = CategorySerializer(read_only=True)
-    author = AuthorSerializer(read_only=True)
-
-    class Meta:
-        model = Book
-        fields = '__all__'
-        
+        fields = ['name',
+                  'thumbnail',
+                  'category',
+                  'authors',
+                  'lead_text',
+                  'amount',
+                  'isbn',
+                  'publication_date'
+                  ]

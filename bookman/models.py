@@ -32,9 +32,6 @@ class Category(models.Model):
 
 
 class Author(models.Model):
-    """
-    書籍 著者名
-    """
     name = models.CharField('著者名', max_length=256)
 
     def __str__(self):
