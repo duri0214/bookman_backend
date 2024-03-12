@@ -6,7 +6,7 @@ class Branch(models.Model):
     """
     図書館支店マスタ
     """
-    name = models.CharField(max_length=256)
+    name = models.CharField(max_length=256, unique=True)
     address = models.CharField(max_length=256)
     phone = models.CharField(max_length=20)
     remark = models.CharField(max_length=256)
@@ -21,7 +21,7 @@ class Branch(models.Model):
 
 
 class Category(models.Model):
-    name = models.CharField('カテゴリ名', max_length=100)
+    name = models.CharField('カテゴリ名', max_length=100, unique=True)
     color = models.CharField('色(16進数)', max_length=7, default='#000000')
 
     class Meta:
@@ -32,7 +32,7 @@ class Category(models.Model):
 
 
 class Author(models.Model):
-    name = models.CharField('著者名', max_length=256)
+    name = models.CharField('著者名', max_length=256, unique=True)
 
     def __str__(self):
         return self.name
@@ -43,7 +43,7 @@ class Book(models.Model):
     書籍マスタ
     システムを使用するひとつの自治体が束ねる、n個の支店図書館すべてが所蔵する本
     """
-    name = models.CharField('タイトル', max_length=256)
+    name = models.CharField('タイトル', max_length=256, unique=True)
     thumbnail = models.ImageField('サムネイル', blank=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, verbose_name='カテゴリ')
     authors = models.ManyToManyField(Author, verbose_name='著者')

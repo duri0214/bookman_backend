@@ -8,6 +8,10 @@ class BranchList(generics.ListAPIView):
     serializer_class = BranchSerializer
 
 
+class BranchCreate(generics.CreateAPIView):
+    serializer_class = BranchSerializer
+
+
 class CategoryList(generics.ListAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -15,6 +19,10 @@ class CategoryList(generics.ListAPIView):
 
 class BookList(generics.ListAPIView):
     queryset = Book.objects.all().order_by('category')
+    serializer_class = BookSerializer
+
+
+class BookCreate(generics.CreateAPIView):
     serializer_class = BookSerializer
 
 

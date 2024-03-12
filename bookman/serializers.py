@@ -21,14 +21,14 @@ class BranchSerializer(serializers.ModelSerializer):
 
 
 class BookSerializer(serializers.ModelSerializer):
-    category = CategorySerializer(read_only=True)
-    authors = AuthorSerializer(many=True, read_only=True)
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    authors = serializers.PrimaryKeyRelatedField(queryset=Author.objects.all(), many=True)
 
     class Meta:
         model = Book
         fields = ['name',
-                  'thumbnail',
                   'category',
+                  'thumbnail',
                   'authors',
                   'lead_text',
                   'amount',
