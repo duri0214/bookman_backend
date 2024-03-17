@@ -5,19 +5,19 @@ from bookman.models import Branch, Book, Category, Author
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ['name', 'color']
+        fields = ['id', 'name', 'color']
 
 
 class AuthorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Author
-        fields = ['name']
+        fields = ['id', 'name']
 
 
 class BranchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
-        fields = ['name', 'address', 'phone', 'remark']
+        fields = ['id', 'name', 'address', 'phone', 'remark']
 
 
 class BookSerializer(serializers.ModelSerializer):
@@ -26,7 +26,8 @@ class BookSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Book
-        fields = ['name',
+        fields = ['id',
+                  'name',
                   'category',
                   'thumbnail',
                   'authors',
