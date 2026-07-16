@@ -3,16 +3,15 @@ https://qiita.com/YoshitakaOkada/items/570c025cf235062649c8
 
 ## Codex 運用
 
-このリポジトリは、同階層にある `portfolio/.codex` を Codex 運用ルールとスキルの管理元として参照します。
+このリポジトリは、同じ親フォルダにある `portfolio/.codex` を Codex 運用ルールとスキルの管理元として参照します。
 
 ```text
 dev/
   portfolio/
   bookman_backend/
-  bookman_nextjs/
 ```
 
-詳細は `.codex/README.md` と `AGENTS.md` を参照してください。
+詳細は `AGENTS.md` を参照してください。
 
 ## fixtures
 ```console
