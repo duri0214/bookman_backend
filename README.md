@@ -1,6 +1,11 @@
 # Bookman - 図書管理ソフト
 https://qiita.com/YoshitakaOkada/items/570c025cf235062649c8
 
+## setup
+```console
+python -m pip install -r requirements.txt
+```
+
 ## Codex 運用
 
 このリポジトリは、同じ親フォルダにある `portfolio/.codex` を Codex 運用ルールとスキルの管理元として参照します。
