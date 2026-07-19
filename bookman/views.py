@@ -1,10 +1,12 @@
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
-from rest_framework import generics
+from rest_framework import generics, status
+from rest_framework.response import Response
 
 from .models import Author, Book, Branch, BranchBookStock, Category
 from .serializers import (
     AuthorSerializer,
+    BranchBookStockTransferSerializer,
     BranchBookStockSerializer,
     BookSerializer,
     BranchSerializer,
@@ -85,3 +87,16 @@ class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return BranchBookStock.objects.select_related("branch", "book")
+
+
+class BranchBookStockTransfer(generics.GenericAPIView):
+    serializer_class = BranchBookStockTransferSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        transfer = serializer.save()
+        return Response(
+            self.get_serializer(transfer).data,
+            status=status.HTTP_200_OK,
+        )

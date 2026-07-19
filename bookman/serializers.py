@@ -7,6 +7,11 @@ API リクエストでは JSON の入力値を検証して model に保存でき
 
 from rest_framework import serializers
 
+from bookman.domain.service import (
+    BranchBookStockTransferService,
+    InsufficientStockError,
+    SourceStockNotFoundError,
+)
 from bookman.models import Author, Book, Branch, BranchBookStock, Category
 
 
@@ -56,6 +61,51 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
     class Meta:
         model = BranchBookStock
         fields = ["id", "branch", "branch_name", "book", "book_name", "amount"]
+
+
+class BranchBookStockTransferSerializer(serializers.Serializer):
+    """
+    支店間の本の移動APIの入出力。
+
+    1リクエストで移動元の所蔵数を減らし、移動先の所蔵数を増やす。
+    """
+
+    book = serializers.PrimaryKeyRelatedField(queryset=Book.objects.order_by("id"))
+    from_branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.order_by("id")
+    )
+    to_branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.order_by("id")
+    )
+    amount = serializers.IntegerField(min_value=1)
+    source_stock = BranchBookStockSerializer(read_only=True)
+    destination_stock = BranchBookStockSerializer(read_only=True)
+
+    def validate(self, attrs):
+        """
+        同一支店への移動を拒否する。
+        """
+        if attrs["from_branch"] == attrs["to_branch"]:
+            raise serializers.ValidationError(
+                {"to_branch": "移動元と移動先には別の支店を指定してください。"}
+            )
+
+        return attrs
+
+    def create(self, validated_data):
+        """
+        支店間移動の業務処理を実行する。
+        """
+        try:
+            return BranchBookStockTransferService().transfer(**validated_data)
+        except SourceStockNotFoundError as exc:
+            raise serializers.ValidationError(
+                {"from_branch": "移動元支店に対象書籍の所蔵がありません。"}
+            ) from exc
+        except InsufficientStockError as exc:
+            raise serializers.ValidationError(
+                {"amount": "移動元支店の所蔵数が不足しています。"}
+            ) from exc
 
 
 class BookSerializer(serializers.ModelSerializer):

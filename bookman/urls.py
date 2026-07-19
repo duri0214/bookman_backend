@@ -18,6 +18,11 @@ urlpatterns = [
         views.BranchBookStockDetail.as_view(),
         name="branch_book_stock_detail",
     ),
+    path(
+        "api/branch-book-stocks/transfer/",
+        views.BranchBookStockTransfer.as_view(),
+        name="branch_book_stock_transfer",
+    ),
     path("api/authors/", views.AuthorList.as_view(), name="author_list"),
     path("api/categories/", views.CategoryList.as_view(), name="category_list"),
 ]
