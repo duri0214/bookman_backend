@@ -137,6 +137,7 @@ class BookmanApiTest(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["total_amount"], 0)
         book = Book.objects.get(name="銀河鉄道の夜")
         self.assertEqual(book.category, self.second_category)
         self.assertEqual(

@@ -67,7 +67,7 @@ class BookSerializer(serializers.ModelSerializer):
         queryset=Author.objects.order_by("id"),
     )
     assignments = BookAssignmentSerializer(many=True, read_only=True)
-    total_amount = serializers.IntegerField(read_only=True)
+    total_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Book
@@ -83,3 +83,10 @@ class BookSerializer(serializers.ModelSerializer):
             "isbn",
             "publication_date",
         ]
+
+    def get_total_amount(self, obj):
+        annotated_total_amount = getattr(obj, "total_amount", None)
+        if annotated_total_amount is not None:
+            return annotated_total_amount
+
+        return sum(assignment.amount for assignment in obj.assignments.all())
