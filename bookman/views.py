@@ -1,3 +1,5 @@
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 from rest_framework import generics
 
 from .models import Assignment, Author, Book, Branch, Category
@@ -41,6 +43,7 @@ class BookList(generics.ListAPIView):
     def get_queryset(self):
         return (
             Book.objects.select_related("category")
+            .annotate(total_amount=Coalesce(Sum("assignments__amount"), 0))
             .prefetch_related("authors", "assignments__branch")
             .order_by("category_id", "id")
         )
@@ -50,8 +53,10 @@ class BookCreate(generics.CreateAPIView):
     serializer_class = BookSerializer
 
     def get_queryset(self):
-        return Book.objects.select_related("category").prefetch_related(
-            "authors", "assignments__branch"
+        return (
+            Book.objects.select_related("category")
+            .annotate(total_amount=Coalesce(Sum("assignments__amount"), 0))
+            .prefetch_related("authors", "assignments__branch")
         )
 
 
@@ -59,8 +64,10 @@ class BookDetail(generics.RetrieveAPIView):
     serializer_class = BookSerializer
 
     def get_queryset(self):
-        return Book.objects.select_related("category").prefetch_related(
-            "authors", "assignments__branch"
+        return (
+            Book.objects.select_related("category")
+            .annotate(total_amount=Coalesce(Sum("assignments__amount"), 0))
+            .prefetch_related("authors", "assignments__branch")
         )
 
 

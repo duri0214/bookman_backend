@@ -30,7 +30,6 @@ class BookmanApiTest(APITestCase):
             name="吾輩は猫である",
             category=cls.category,
             lead_text="近代文学の代表作です。",
-            amount=3,
             isbn="9780000000001",
             publication_date=date(2026, 1, 1),
         )
@@ -91,19 +90,19 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["name"], "西図書館")
         self.assertTrue(Branch.objects.filter(name="西図書館").exists())
 
-    def test_book_list_returns_primary_key_relations(self):
+    def test_book_list_returns_assignment_total_amount(self):
         """
         シナリオ:
-        - 入力: カテゴリと著者に紐づく書籍データが登録されている状態。
+        - 入力: カテゴリ、著者、支店別所蔵数に紐づく書籍データが登録されている状態。
         - 処理: 書籍一覧APIへGETリクエストする。
-        - 期待値: category はID、authors はID配列として返ること。
+        - 期待値: category はID、authors はID配列、total_amount は支店別所蔵数の合計として返ること。
         """
         response = self.client.get("/bookman/api/books/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["category"], self.category.id)
         self.assertEqual(response.data[0]["authors"], [self.author.id])
-        self.assertEqual(response.data[0]["amount"], 3)
+        self.assertEqual(response.data[0]["total_amount"], 2)
         self.assertEqual(
             response.data[0]["assignments"],
             [
@@ -129,7 +128,6 @@ class BookmanApiTest(APITestCase):
             "category": self.second_category.id,
             "authors": [self.second_author.id],
             "lead_text": "宮沢賢治の童話です。",
-            "amount": 5,
             "isbn": "9780000000002",
             "publication_date": "2026-01-02",
         }
@@ -158,8 +156,26 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["id"], self.book.id)
         self.assertEqual(response.data["category"], self.category.id)
         self.assertEqual(response.data["authors"], [self.author.id])
-        self.assertEqual(response.data["amount"], 3)
+        self.assertEqual(response.data["total_amount"], 2)
         self.assertEqual(response.data["assignments"][0]["amount"], 2)
+
+    def test_book_detail_total_amount_sums_all_branch_assignments(self):
+        """
+        シナリオ:
+        - 入力: 同じ書籍に複数支店の所蔵数が登録されている状態。
+        - 処理: 書籍詳細APIへGETリクエストする。
+        - 期待値: total_amount に全支店の Assignment.amount 合計が返ること。
+        """
+        Assignment.objects.create(
+            branch=self.second_branch,
+            book=self.book,
+            amount=4,
+        )
+
+        response = self.client.get(f"/bookman/api/books/{self.book.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["total_amount"], 6)
 
     def test_assignment_list_returns_branch_book_amounts(self):
         """
@@ -177,12 +193,12 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["book_name"], "吾輩は猫である")
         self.assertEqual(response.data[0]["amount"], 2)
 
-    def test_assignment_create_keeps_book_total_amount(self):
+    def test_assignment_create_changes_book_total_amount_without_sync(self):
         """
         シナリオ:
         - 入力: 既存書籍と別支店に紐づく支店別所蔵数の登録ペイロード。
-        - 処理: 所蔵数一覧APIへPOSTリクエストする。
-        - 期待値: Assignment が作成され、Book.amount の自治体全体数量は変更されないこと。
+        - 処理: 所蔵数一覧APIへPOSTリクエストした後、書籍詳細APIへGETリクエストする。
+        - 期待値: Assignment が作成され、total_amount が同期処理なしで合計値に変わること。
         """
         payload = {
             "branch": self.second_branch.id,
@@ -198,8 +214,8 @@ class BookmanApiTest(APITestCase):
                 branch=self.second_branch, book=self.book, amount=1
             ).exists()
         )
-        self.book.refresh_from_db()
-        self.assertEqual(self.book.amount, 3)
+        detail_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
+        self.assertEqual(detail_response.data["total_amount"], 3)
 
     def test_assignment_detail_accepts_amount_update(self):
         """

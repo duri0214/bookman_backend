@@ -67,6 +67,7 @@ class BookSerializer(serializers.ModelSerializer):
         queryset=Author.objects.order_by("id"),
     )
     assignments = BookAssignmentSerializer(many=True, read_only=True)
+    total_amount = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Book
@@ -77,7 +78,7 @@ class BookSerializer(serializers.ModelSerializer):
             "thumbnail",
             "authors",
             "lead_text",
-            "amount",
+            "total_amount",
             "assignments",
             "isbn",
             "publication_date",

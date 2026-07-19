@@ -52,7 +52,6 @@ class Book(models.Model):
     )
     authors = models.ManyToManyField(Author, verbose_name="著者")
     lead_text = models.TextField("紹介文")
-    amount = models.PositiveSmallIntegerField("数量")
     isbn = models.CharField("ISBNコード", max_length=20)
     publication_date = models.DateField("出版年月日")
     created_at = models.DateField("登録日", auto_now_add=True)
@@ -65,7 +64,7 @@ class Book(models.Model):
 class Assignment(models.Model):
     """
     システムを使用するひとつの自治体が束ねる、n個の支店図書館がそれぞれどの本をいくつ所蔵するか
-    ある支店図書館にある本の数量合計が、Bookテーブルの amount と一致する
+    自治体全体の所蔵数は、同じ書籍に紐づく amount の合計として扱う
     """
 
     branch = models.ForeignKey(
