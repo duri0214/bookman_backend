@@ -70,7 +70,7 @@ class Lending(models.Model):
     branch_book_stock = models.ForeignKey(
         "BranchBookStock", related_name="lendings", on_delete=models.CASCADE
     )
-    active = models.BooleanField(default=True)  # pyright: ignore[reportArgumentType]
+    active = models.BooleanField(default=True)
     customer_user = models.ForeignKey(
         User, related_name="customer", on_delete=models.CASCADE
     )
