@@ -8,6 +8,12 @@ urlpatterns = [
     path("api/books/", views.BookList.as_view(), name="book_list"),
     path("api/books/create/", views.BookCreate.as_view(), name="book_create"),
     path("api/books/<int:pk>/", views.BookDetail.as_view(), name="book_detail"),
+    path("api/assignments/", views.AssignmentList.as_view(), name="assignment_list"),
+    path(
+        "api/assignments/<int:pk>/",
+        views.AssignmentDetail.as_view(),
+        name="assignment_detail",
+    ),
     path("api/authors/", views.AuthorList.as_view(), name="author_list"),
     path("api/categories/", views.CategoryList.as_view(), name="category_list"),
 ]
