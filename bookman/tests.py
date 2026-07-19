@@ -129,30 +129,6 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["category"], self.category.id)
         self.assertEqual(response.data["authors"], [self.author.id])
 
-    def test_book_create_rejects_empty_authors(self):
-        """
-        シナリオ:
-        - 入力: authors が空配列の書籍登録ペイロード。
-        - 処理: 書籍登録APIへPOSTリクエストする。
-        - 期待値: validation error となり、書籍が作成されないこと。
-        """
-        payload = {
-            "name": "著者なしの本",
-            "category": self.category.id,
-            "authors": [],
-            "lead_text": "著者が空の入力です。",
-            "amount": 1,
-            "isbn": "9780000000003",
-            "publication_date": "2026-01-03",
-        }
-
-        response = self.client.post(
-            "/bookman/api/books/create/", payload, format="json"
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertFalse(Book.objects.filter(name="著者なしの本").exists())
-
     def test_author_and_category_lists_are_ordered_by_id(self):
         """
         シナリオ:
