@@ -3,7 +3,7 @@ from datetime import date
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from bookman.models import Author, Book, Branch, Category
+from bookman.models import Assignment, Author, Book, Branch, Category
 
 
 class BookmanApiTest(APITestCase):
@@ -14,6 +14,12 @@ class BookmanApiTest(APITestCase):
             address="青森県上北郡六戸町",
             phone="0176-00-0000",
             remark="本館",
+        )
+        cls.second_branch = Branch.objects.create(
+            name="東図書館",
+            address="青森県上北郡六戸町東",
+            phone="0176-00-0001",
+            remark="分館",
         )
         cls.category = Category.objects.create(name="小説", color="#ff0000")
         cls.second_category = Category.objects.create(name="実用書", color="#00ff00")
@@ -29,6 +35,11 @@ class BookmanApiTest(APITestCase):
             publication_date=date(2026, 1, 1),
         )
         cls.book.authors.set([cls.author])
+        cls.assignment = Assignment.objects.create(
+            branch=cls.branch,
+            book=cls.book,
+            amount=2,
+        )
 
     def test_branch_list_returns_frontend_fields(self):
         """
@@ -49,7 +60,14 @@ class BookmanApiTest(APITestCase):
                     "address": "青森県上北郡六戸町",
                     "phone": "0176-00-0000",
                     "remark": "本館",
-                }
+                },
+                {
+                    "id": self.second_branch.id,
+                    "name": "東図書館",
+                    "address": "青森県上北郡六戸町東",
+                    "phone": "0176-00-0001",
+                    "remark": "分館",
+                },
             ],
         )
 
@@ -61,17 +79,17 @@ class BookmanApiTest(APITestCase):
         - 期待値: 支店が作成され、レスポンスに支店フィールドが返ること。
         """
         payload = {
-            "name": "東図書館",
-            "address": "青森県上北郡六戸町東",
-            "phone": "0176-00-0001",
-            "remark": "分館",
+            "name": "西図書館",
+            "address": "青森県上北郡六戸町西",
+            "phone": "0176-00-0002",
+            "remark": "西分館",
         }
 
         response = self.client.post("/bookman/api/branches/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["name"], "東図書館")
-        self.assertTrue(Branch.objects.filter(name="東図書館").exists())
+        self.assertEqual(response.data["name"], "西図書館")
+        self.assertTrue(Branch.objects.filter(name="西図書館").exists())
 
     def test_book_list_returns_primary_key_relations(self):
         """
@@ -85,6 +103,18 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["category"], self.category.id)
         self.assertEqual(response.data[0]["authors"], [self.author.id])
+        self.assertEqual(response.data[0]["amount"], 3)
+        self.assertEqual(
+            response.data[0]["assignments"],
+            [
+                {
+                    "id": self.assignment.id,
+                    "branch": self.branch.id,
+                    "branch_name": "中央図書館",
+                    "amount": 2,
+                }
+            ],
+        )
         self.assertEqual(response.data[0]["lead_text"], "近代文学の代表作です。")
 
     def test_book_create_accepts_frontend_payload(self):
@@ -128,6 +158,65 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["id"], self.book.id)
         self.assertEqual(response.data["category"], self.category.id)
         self.assertEqual(response.data["authors"], [self.author.id])
+        self.assertEqual(response.data["amount"], 3)
+        self.assertEqual(response.data["assignments"][0]["amount"], 2)
+
+    def test_assignment_list_returns_branch_book_amounts(self):
+        """
+        シナリオ:
+        - 入力: 書籍と支店に紐づく所蔵数データが登録されている状態。
+        - 処理: 所蔵数一覧APIへGETリクエストする。
+        - 期待値: 支店ID、書籍ID、支店別数量が返り、書籍の総数量と区別できること。
+        """
+        response = self.client.get("/bookman/api/assignments/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data[0]["branch"], self.branch.id)
+        self.assertEqual(response.data[0]["branch_name"], "中央図書館")
+        self.assertEqual(response.data[0]["book"], self.book.id)
+        self.assertEqual(response.data[0]["book_name"], "吾輩は猫である")
+        self.assertEqual(response.data[0]["amount"], 2)
+
+    def test_assignment_create_keeps_book_total_amount(self):
+        """
+        シナリオ:
+        - 入力: 既存書籍と別支店に紐づく支店別所蔵数の登録ペイロード。
+        - 処理: 所蔵数一覧APIへPOSTリクエストする。
+        - 期待値: Assignment が作成され、Book.amount の自治体全体数量は変更されないこと。
+        """
+        payload = {
+            "branch": self.second_branch.id,
+            "book": self.book.id,
+            "amount": 1,
+        }
+
+        response = self.client.post("/bookman/api/assignments/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(
+            Assignment.objects.filter(
+                branch=self.second_branch, book=self.book, amount=1
+            ).exists()
+        )
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.amount, 3)
+
+    def test_assignment_detail_accepts_amount_update(self):
+        """
+        シナリオ:
+        - 入力: 登録済みの支店別所蔵数と更新後数量。
+        - 処理: 所蔵数詳細APIへPATCHリクエストする。
+        - 期待値: 対象 Assignment の数量だけが更新されること。
+        """
+        response = self.client.patch(
+            f"/bookman/api/assignments/{self.assignment.id}/",
+            {"amount": 3},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.amount, 3)
 
     def test_author_and_category_lists_are_ordered_by_id(self):
         """

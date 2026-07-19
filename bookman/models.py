@@ -68,11 +68,22 @@ class Assignment(models.Model):
     ある支店図書館にある本の数量合計が、Bookテーブルの amount と一致する
     """
 
-    branch = models.ForeignKey("Branch", on_delete=models.CASCADE)
-    book = models.ForeignKey("Book", on_delete=models.CASCADE)
+    branch = models.ForeignKey(
+        "Branch", related_name="assignments", on_delete=models.CASCADE
+    )
+    book = models.ForeignKey(
+        "Book", related_name="assignments", on_delete=models.CASCADE
+    )
     amount = models.PositiveSmallIntegerField()
     created_at = models.DateField(auto_now_add=True)
     updated_at = models.DateField(auto_now=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "book"], name="bookman_assignment_branch_book_unique"
+            )
+        ]
 
     def __str__(self):
         return f"{self.book.name}({self.amount}) {self.branch.name}"
