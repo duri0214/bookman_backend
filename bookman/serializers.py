@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from bookman.models import Branch, Book, Category, Author
+
+from bookman.models import Author, Book, Branch, Category
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -21,9 +22,12 @@ class BranchSerializer(serializers.ModelSerializer):
 
 
 class BookSerializer(serializers.ModelSerializer):
-    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.order_by("id")
+    )
     authors = serializers.PrimaryKeyRelatedField(
-        queryset=Author.objects.all(), many=True
+        many=True,
+        queryset=Author.objects.order_by("id"),
     )
 
     class Meta:
