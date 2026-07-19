@@ -100,7 +100,7 @@ Bookman はフロントエンドとバックエンドを両方起動して動か
 ```console
 cd ../bookman_backend
 .\venv\Scripts\Activate.ps1
-python manage.py runserver 127.0.0.1:8000
+python manage.py runserver
 ```
 
 ターミナル 2 でフロントエンドの開発用サーバーを起動します。
