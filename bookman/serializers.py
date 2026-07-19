@@ -7,7 +7,7 @@ API リクエストでは JSON の入力値を検証して model に保存でき
 
 from rest_framework import serializers
 
-from bookman.models import Assignment, Author, Book, Branch, Category
+from bookman.models import Author, Book, Branch, BranchBookStock, Category
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -28,7 +28,7 @@ class BranchSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "address", "phone", "remark"]
 
 
-class BookAssignmentSerializer(serializers.ModelSerializer):
+class BookBranchStockSerializer(serializers.ModelSerializer):
     """
     書籍詳細・一覧の中に埋め込む支店別所蔵数。
 
@@ -38,11 +38,11 @@ class BookAssignmentSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="branch.name", read_only=True)
 
     class Meta:
-        model = Assignment
+        model = BranchBookStock
         fields = ["id", "branch", "branch_name", "amount"]
 
 
-class AssignmentSerializer(serializers.ModelSerializer):
+class BranchBookStockSerializer(serializers.ModelSerializer):
     """
     支店別所蔵数APIの入出力。
 
@@ -54,7 +54,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
     book_name = serializers.CharField(source="book.name", read_only=True)
 
     class Meta:
-        model = Assignment
+        model = BranchBookStock
         fields = ["id", "branch", "branch_name", "book", "book_name", "amount"]
 
 
@@ -66,7 +66,8 @@ class BookSerializer(serializers.ModelSerializer):
         many=True,
         queryset=Author.objects.order_by("id"),
     )
-    assignments = BookAssignmentSerializer(many=True, read_only=True)
+    branch_stocks = BookBranchStockSerializer(many=True, read_only=True)
+    total_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Book
@@ -77,8 +78,18 @@ class BookSerializer(serializers.ModelSerializer):
             "thumbnail",
             "authors",
             "lead_text",
-            "amount",
-            "assignments",
+            "total_amount",
+            "branch_stocks",
             "isbn",
             "publication_date",
         ]
+
+    def get_total_amount(self, obj):
+        """
+        支店別所蔵数の小計を合計し、自治体全体の所蔵数として返す。
+        """
+        annotated_branch_amount_total = getattr(obj, "total_amount", None)
+        if annotated_branch_amount_total is not None:
+            return annotated_branch_amount_total
+
+        return sum(branch_stock.amount for branch_stock in obj.branch_stocks.all())
