@@ -1,9 +1,10 @@
 from datetime import date
 
+from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from bookman.models import Assignment, Author, Book, Branch, Category
+from bookman.models import Author, Book, Branch, BranchBookStock, Category, Lending
 
 
 class BookmanApiTest(APITestCase):
@@ -34,7 +35,7 @@ class BookmanApiTest(APITestCase):
             publication_date=date(2026, 1, 1),
         )
         cls.book.authors.set([cls.author])
-        cls.assignment = Assignment.objects.create(
+        cls.branch_stock = BranchBookStock.objects.create(
             branch=cls.branch,
             book=cls.book,
             amount=2,
@@ -90,7 +91,7 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["name"], "西図書館")
         self.assertTrue(Branch.objects.filter(name="西図書館").exists())
 
-    def test_book_list_returns_assignment_total_amount(self):
+    def test_book_list_returns_branch_stock_total_amount(self):
         """
         シナリオ:
         - 入力: カテゴリ、著者、支店別所蔵数に紐づく書籍データが登録されている状態。
@@ -104,10 +105,10 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["authors"], [self.author.id])
         self.assertEqual(response.data[0]["total_amount"], 2)
         self.assertEqual(
-            response.data[0]["assignments"],
+            response.data[0]["branch_stocks"],
             [
                 {
-                    "id": self.assignment.id,
+                    "id": self.branch_stock.id,
                     "branch": self.branch.id,
                     "branch_name": "中央図書館",
                     "amount": 2,
@@ -158,16 +159,16 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["category"], self.category.id)
         self.assertEqual(response.data["authors"], [self.author.id])
         self.assertEqual(response.data["total_amount"], 2)
-        self.assertEqual(response.data["assignments"][0]["amount"], 2)
+        self.assertEqual(response.data["branch_stocks"][0]["amount"], 2)
 
-    def test_book_detail_total_amount_sums_all_branch_assignments(self):
+    def test_book_detail_total_amount_sums_all_branch_stocks(self):
         """
         シナリオ:
         - 入力: 同じ書籍に複数支店の所蔵数が登録されている状態。
         - 処理: 書籍詳細APIへGETリクエストする。
-        - 期待値: total_amount に全支店の Assignment.amount 合計が返ること。
+        - 期待値: total_amount に全支店の BranchBookStock.amount 合計が返ること。
         """
-        Assignment.objects.create(
+        BranchBookStock.objects.create(
             branch=self.second_branch,
             book=self.book,
             amount=4,
@@ -178,14 +179,14 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["total_amount"], 6)
 
-    def test_assignment_list_returns_branch_book_amounts(self):
+    def test_branch_book_stock_list_returns_branch_book_amounts(self):
         """
         シナリオ:
         - 入力: 書籍と支店に紐づく所蔵数データが登録されている状態。
         - 処理: 所蔵数一覧APIへGETリクエストする。
         - 期待値: 支店ID、書籍ID、支店別数量が返り、書籍の総数量と区別できること。
         """
-        response = self.client.get("/bookman/api/assignments/")
+        response = self.client.get("/bookman/api/branch-book-stocks/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["branch"], self.branch.id)
@@ -194,12 +195,12 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["book_name"], "吾輩は猫である")
         self.assertEqual(response.data[0]["amount"], 2)
 
-    def test_assignment_create_changes_book_total_amount_without_sync(self):
+    def test_branch_book_stock_create_changes_book_total_amount_without_sync(self):
         """
         シナリオ:
         - 入力: 既存書籍と別支店に紐づく支店別所蔵数の登録ペイロード。
         - 処理: 所蔵数一覧APIへPOSTリクエストした後、書籍詳細APIへGETリクエストする。
-        - 期待値: Assignment が作成され、total_amount が同期処理なしで合計値に変わること。
+        - 期待値: BranchBookStock が作成され、total_amount が同期処理なしで合計値に変わること。
         """
         payload = {
             "branch": self.second_branch.id,
@@ -207,33 +208,55 @@ class BookmanApiTest(APITestCase):
             "amount": 1,
         }
 
-        response = self.client.post("/bookman/api/assignments/", payload, format="json")
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/", payload, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(
-            Assignment.objects.filter(
+            BranchBookStock.objects.filter(
                 branch=self.second_branch, book=self.book, amount=1
             ).exists()
         )
         detail_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
         self.assertEqual(detail_response.data["total_amount"], 3)
 
-    def test_assignment_detail_accepts_amount_update(self):
+    def test_branch_book_stock_detail_accepts_amount_update(self):
         """
         シナリオ:
         - 入力: 登録済みの支店別所蔵数と更新後数量。
         - 処理: 所蔵数詳細APIへPATCHリクエストする。
-        - 期待値: 対象 Assignment の数量だけが更新されること。
+        - 期待値: 対象 BranchBookStock の数量だけが更新されること。
         """
         response = self.client.patch(
-            f"/bookman/api/assignments/{self.assignment.id}/",
+            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/",
             {"amount": 3},
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assignment.refresh_from_db()
-        self.assertEqual(self.assignment.amount, 3)
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.amount, 3)
+
+    def test_lending_belongs_to_branch_book_stock(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数と利用者、対応者が登録されている状態。
+        - 処理: 支店別所蔵数に紐づく貸出情報を作成する。
+        - 期待値: 貸出情報から対象の支店別所蔵数を参照でき、active の初期値が True になること。
+        """
+        customer_user = User.objects.create_user(username="customer")
+        contact_user = User.objects.create_user(username="contact")
+
+        lending = Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            return_date=date(2026, 1, 15),
+            customer_user=customer_user,
+            contact_user=contact_user,
+        )
+
+        self.assertEqual(lending.branch_book_stock, self.branch_stock)
+        self.assertTrue(lending.active)
 
     def test_author_and_category_lists_are_ordered_by_id(self):
         """
