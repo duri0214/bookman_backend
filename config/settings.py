@@ -65,6 +65,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://153.126.200.229:3000",
+    "http://henojiya.net:3000",
+]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://.*\.henojiya\.net:3000$",
 ]
 
 ROOT_URLCONF = "config.urls"
