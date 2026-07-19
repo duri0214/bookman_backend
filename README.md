@@ -53,8 +53,6 @@ Django の設定は `.env` から読み込みます。
 ```env
 DJANGO_DEBUG_MODE=True
 DJANGO_SECRET_KEY=django-insecure-...
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
-DJANGO_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 DJANGO_DB_HOST=127.0.0.1
 DJANGO_DB_USER=python
 DJANGO_DB_PASSWORD=...

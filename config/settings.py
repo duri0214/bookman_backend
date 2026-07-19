@@ -21,13 +21,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # .env ファイルを読み込む
 load_dotenv(BASE_DIR / ".env")
 
-
-def _get_csv_env(name: str, default: str) -> list[str]:
-    return [
-        value.strip() for value in os.getenv(name, default).split(",") if value.strip()
-    ]
-
-
 # デバッグモードの判定
 _django_debug_mode = os.getenv("DJANGO_DEBUG_MODE", "False")
 DEBUG = _django_debug_mode.lower() == "true"
@@ -36,7 +29,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-local-development-k
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-ALLOWED_HOSTS = _get_csv_env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 
 # Application definition
@@ -68,10 +61,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
-CORS_ALLOWED_ORIGINS = _get_csv_env(
-    "DJANGO_CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000",
-)
+CORS_ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 ROOT_URLCONF = "config.urls"
 
