@@ -24,7 +24,7 @@ load_dotenv(BASE_DIR / ".env")
 # デバッグモードの判定
 _django_debug_mode = os.getenv("DJANGO_DEBUG_MODE", "False")
 DEBUG = _django_debug_mode.lower() == "true"
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-local-development-key")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
