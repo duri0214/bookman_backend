@@ -10,32 +10,33 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
-import environ
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Read local settings from .env when it exists.
-env = environ.Env(
-    DJANGO_DEBUG_MODE=(bool, False),
-    DJANGO_SECRET_KEY=(str, "django-insecure-local-development-key"),
-    DJANGO_DB_ENGINE=(str, "django.db.backends.mysql"),
-    DJANGO_DB_NAME=(str, "bookman_db"),
-    DJANGO_DB_USER=(str, "python"),
-    DJANGO_DB_PASSWORD=(str, ""),
-    DJANGO_DB_HOST=(str, "127.0.0.1"),
-    DJANGO_DB_PORT=(str, "3306"),
-)
-environ.Env.read_env(BASE_DIR / ".env")
-DEBUG = env("DJANGO_DEBUG_MODE")
-SECRET_KEY = env("DJANGO_SECRET_KEY")
+# .env ファイルを読み込む
+load_dotenv(BASE_DIR / ".env")
+
+
+def _get_csv_env(name: str, default: str) -> list[str]:
+    return [
+        value.strip() for value in os.getenv(name, default).split(",") if value.strip()
+    ]
+
+
+# デバッグモードの判定
+_django_debug_mode = os.getenv("DJANGO_DEBUG_MODE", "False")
+DEBUG = _django_debug_mode.lower() == "true"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-local-development-key")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = _get_csv_env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 
 # Application definition
@@ -67,9 +68,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
-CORS_ALLOWED_ORIGINS = env.list(
+CORS_ALLOWED_ORIGINS = _get_csv_env(
     "DJANGO_CORS_ALLOWED_ORIGINS",
-    default=["http://localhost:3000", "http://127.0.0.1:3000"],
+    "http://localhost:3000,http://127.0.0.1:3000",
 )
 
 ROOT_URLCONF = "config.urls"
@@ -98,12 +99,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": env("DJANGO_DB_ENGINE"),
-        "NAME": env("DJANGO_DB_NAME"),
-        "USER": env("DJANGO_DB_USER"),
-        "PASSWORD": env("DJANGO_DB_PASSWORD"),
-        "HOST": env("DJANGO_DB_HOST"),
-        "PORT": env("DJANGO_DB_PORT"),
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.getenv("DJANGO_DB_NAME", "bookman_db"),
+        "USER": os.getenv("DJANGO_DB_USER", "python"),
+        "PASSWORD": os.getenv("DJANGO_DB_PASSWORD"),
+        "HOST": os.getenv("DJANGO_DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DJANGO_DB_PORT", "3306"),
     }
 }
 
