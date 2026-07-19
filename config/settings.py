@@ -86,11 +86,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
-        "HOST": env("DJANGO_DB_HOST"),
         "ENGINE": env("DB_ENGINE"),
         "NAME": env("DB_NAME"),
         "USER": env("DB_USER"),
         "PASSWORD": env("DB_PASSWORD"),
+        "HOST": env("DJANGO_DB_HOST", default=""),
     }
 }
 
