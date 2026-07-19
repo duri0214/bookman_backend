@@ -51,16 +51,19 @@ python -m pip install -r requirements.txt
 Django の設定は `.env` から読み込みます。
 
 ```env
-SECRET_KEY=django-insecure-...
-DEBUG=True
+DJANGO_DEBUG_MODE=True
+DJANGO_SECRET_KEY=django-insecure-...
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+DJANGO_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+DJANGO_DB_ENGINE=django.db.backends.mysql
 DJANGO_DB_HOST=127.0.0.1
-DB_ENGINE=django.db.backends.mysql
-DB_NAME=bookman_db
-DB_USER=python
-DB_PASSWORD=...
+DJANGO_DB_USER=python
+DJANGO_DB_PASSWORD=...
+DJANGO_DB_NAME=bookman_db
+DJANGO_DB_PORT=3306
 ```
 
-`.env` は Git 管理しません。DB 名、ユーザー名、パスワードはローカル MySQL の設定に合わせます。
+`.env` は Git 管理しません。`.env.example` をコピーして、DB 名、ユーザー名、パスワードはローカル MySQL の設定に合わせます。
 
 ## データベース
 
