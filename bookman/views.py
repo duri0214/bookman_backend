@@ -1,16 +1,19 @@
 from rest_framework import generics
-from .models import Book, Category, Branch, Author
+
+from .models import Author, Book, Branch, Category
 from .serializers import (
-    CategorySerializer,
+    AuthorSerializer,
     BookSerializer,
     BranchSerializer,
-    AuthorSerializer,
+    CategorySerializer,
 )
 
 
-class BranchList(generics.ListAPIView):
-    queryset = Branch.objects.all().order_by("id")
+class BranchList(generics.ListCreateAPIView):
     serializer_class = BranchSerializer
+
+    def get_queryset(self):
+        return Branch.objects.order_by("id")
 
 
 class BranchCreate(generics.CreateAPIView):
@@ -18,24 +21,39 @@ class BranchCreate(generics.CreateAPIView):
 
 
 class AuthorList(generics.ListAPIView):
-    queryset = Author.objects.all()
     serializer_class = AuthorSerializer
+
+    def get_queryset(self):
+        return Author.objects.order_by("id")
 
 
 class CategoryList(generics.ListAPIView):
-    queryset = Category.objects.all()
     serializer_class = CategorySerializer
+
+    def get_queryset(self):
+        return Category.objects.order_by("id")
 
 
 class BookList(generics.ListAPIView):
-    queryset = Book.objects.all().order_by("category")
     serializer_class = BookSerializer
+
+    def get_queryset(self):
+        return (
+            Book.objects.select_related("category")
+            .prefetch_related("authors")
+            .order_by("category_id", "id")
+        )
 
 
 class BookCreate(generics.CreateAPIView):
     serializer_class = BookSerializer
 
+    def get_queryset(self):
+        return Book.objects.select_related("category").prefetch_related("authors")
+
 
 class BookDetail(generics.RetrieveAPIView):
-    queryset = Book.objects.all()
     serializer_class = BookSerializer
+
+    def get_queryset(self):
+        return Book.objects.select_related("category").prefetch_related("authors")
