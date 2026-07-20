@@ -1,0 +1,13 @@
+[
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1001,
+    "fields": {
+      "branch": 1,
+      "book": 2,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  }
+]

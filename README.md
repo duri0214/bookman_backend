@@ -89,6 +89,9 @@ python manage.py loaddata bookman/fixtures/m_branch-data.json
 python manage.py loaddata bookman/fixtures/m_category-data.json
 python manage.py loaddata bookman/fixtures/author-data.json
 python manage.py loaddata bookman/fixtures/book-data.json
+python manage.py loaddata bookman/fixtures/branch-book-stock-data.json
+python manage.py loaddata bookman/fixtures/customer-data.json
+python manage.py loaddata bookman/fixtures/contact-user-data.json
 ```
 
 ## サーバーの起動
