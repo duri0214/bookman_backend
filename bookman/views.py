@@ -50,7 +50,7 @@ class LibraryStaffList(generics.ListCreateAPIView):
     serializer_class = LibraryStaffSerializer
 
     def get_queryset(self):
-        return LibraryStaff.objects.select_related("user", "branch").order_by("id")
+        return LibraryStaff.objects.select_related("branch").order_by("id")
 
 
 class AuthorList(generics.ListAPIView):

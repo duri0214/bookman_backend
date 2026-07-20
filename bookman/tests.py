@@ -1,6 +1,5 @@
 from datetime import date
 
-from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -45,9 +44,7 @@ class BookmanApiTest(APITestCase):
             phone="090-0000-0001",
             max_lending_count=2,
         )
-        cls.contact_user = User.objects.create_user(username="contact")
         cls.contact_staff = LibraryStaff.objects.create(
-            user=cls.contact_user,
             name="貸出担当者",
             branch=cls.branch,
             role="counter",
@@ -481,9 +478,9 @@ class BookmanApiTest(APITestCase):
     def test_staff_list_returns_business_staff_fields(self):
         """
         シナリオ:
-        - 入力: 認証ユーザーと紐づく職員データが登録されている状態。
+        - 入力: 職員データが登録されている状態。
         - 処理: 職員一覧APIへGETリクエストする。
-        - 期待値: 職員ID、認証ユーザーID、職員名、所属支店、権限種別が返ること。
+        - 期待値: 職員ID、職員名、所属支店、権限種別が返ること。
         """
         response = self.client.get("/bookman/api/staff/")
 
@@ -493,7 +490,6 @@ class BookmanApiTest(APITestCase):
             [
                 {
                     "id": self.contact_staff.id,
-                    "user": self.contact_user.id,
                     "name": "貸出担当者",
                     "branch": self.branch.id,
                     "role": "counter",

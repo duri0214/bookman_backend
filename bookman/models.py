@@ -1,4 +1,3 @@
-from django.contrib.auth.models import User
 from django.db import models
 
 
@@ -65,7 +64,6 @@ class LibraryStaff(models.Model):
     図書館業務を担当する職員。
 
     Attributes:
-        user: 認証に使う Django ユーザー。
         name: 職員名。
         branch: 所属支店。
         role: 業務上の権限種別。
@@ -73,12 +71,6 @@ class LibraryStaff(models.Model):
         updated_at: 更新日。
     """
 
-    user = models.OneToOneField(
-        User,
-        related_name="library_staff",
-        on_delete=models.CASCADE,
-        verbose_name="認証ユーザー",
-    )
     name = models.CharField("職員名", max_length=255, unique=True)
     branch = models.ForeignKey(
         "Branch",

@@ -59,7 +59,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 class LibraryStaffSerializer(serializers.ModelSerializer):
     class Meta:
         model = LibraryStaff
-        fields = ["id", "user", "name", "branch", "role"]
+        fields = ["id", "name", "branch", "role"]
 
 
 class BookBranchStockSerializer(serializers.ModelSerializer):
