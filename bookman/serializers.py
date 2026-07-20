@@ -86,10 +86,29 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
 
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     book_name = serializers.CharField(source="book.name", read_only=True)
+    available_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = BranchBookStock
-        fields = ["id", "branch", "branch_name", "book", "book_name", "amount"]
+        fields = [
+            "id",
+            "branch",
+            "branch_name",
+            "book",
+            "book_name",
+            "amount",
+            "available_amount",
+        ]
+
+    def get_available_amount(self, obj):
+        """
+        支店別所蔵数から貸出中の冊数を差し引いた貸出可能冊数を返す。
+        """
+        active_lending_count = getattr(obj, "active_lending_count", None)
+        if active_lending_count is None:
+            active_lending_count = obj.lendings.filter(active=True).count()
+
+        return max(obj.amount - active_lending_count, 0)
 
 
 class BranchBookStockTransferSerializer(serializers.Serializer):
