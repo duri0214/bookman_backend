@@ -238,6 +238,171 @@ class BookmanApiTest(APITestCase):
         self.branch_stock.refresh_from_db()
         self.assertEqual(self.branch_stock.amount, 3)
 
+    def test_branch_book_stock_transfer_creates_destination_stock(self):
+        """
+        シナリオ:
+        - 入力: 移動元に2冊あり、移動先には対象書籍の所蔵行がない状態。
+        - 処理: 支店間移動APIへ1冊の移動リクエストをPOSTする。
+        - 期待値: 移動元が1冊減り、移動先の所蔵行が1冊で作成されること。
+        """
+        payload = {
+            "book": self.book.id,
+            "from_branch": self.branch.id,
+            "to_branch": self.second_branch.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.branch_stock.refresh_from_db()
+        destination_stock = BranchBookStock.objects.get(
+            book=self.book, branch=self.second_branch
+        )
+        self.assertEqual(self.branch_stock.amount, 1)
+        self.assertEqual(destination_stock.amount, 1)
+        self.assertEqual(response.data["source_stock"]["amount"], 1)
+        self.assertEqual(response.data["destination_stock"]["amount"], 1)
+
+    def test_branch_book_stock_transfer_adds_existing_destination_stock(self):
+        """
+        シナリオ:
+        - 入力: 移動元に2冊、移動先に同じ書籍が4冊ある状態。
+        - 処理: 支店間移動APIへ2冊の移動リクエストをPOSTする。
+        - 期待値: 移動元が0冊、移動先が6冊になり、書籍全体の所蔵数は変わらないこと。
+        """
+        destination_stock = BranchBookStock.objects.create(
+            branch=self.second_branch,
+            book=self.book,
+            amount=4,
+        )
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/",
+            {
+                "book": self.book.id,
+                "from_branch": self.branch.id,
+                "to_branch": self.second_branch.id,
+                "amount": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.branch_stock.refresh_from_db()
+        destination_stock.refresh_from_db()
+        detail_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
+        self.assertEqual(self.branch_stock.amount, 0)
+        self.assertEqual(destination_stock.amount, 6)
+        self.assertEqual(detail_response.data["total_amount"], 6)
+
+    def test_branch_book_stock_transfer_rejects_same_branch(self):
+        """
+        シナリオ:
+        - 入力: 移動元と移動先に同じ支店を指定した移動ペイロード。
+        - 処理: 支店間移動APIへPOSTリクエストする。
+        - 期待値: 400 が返り、所蔵数が変更されないこと。
+        """
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/",
+            {
+                "book": self.book.id,
+                "from_branch": self.branch.id,
+                "to_branch": self.branch.id,
+                "amount": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.amount, 2)
+
+    def test_branch_book_stock_transfer_rejects_zero_amount(self):
+        """
+        シナリオ:
+        - 入力: 移動冊数に0を指定した移動ペイロード。
+        - 処理: 支店間移動APIへPOSTリクエストする。
+        - 期待値: 400 が返り、所蔵数が変更されないこと。
+        """
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/",
+            {
+                "book": self.book.id,
+                "from_branch": self.branch.id,
+                "to_branch": self.second_branch.id,
+                "amount": 0,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.amount, 2)
+
+    def test_branch_book_stock_transfer_rejects_insufficient_stock(self):
+        """
+        シナリオ:
+        - 入力: 移動元の所蔵数2冊を超える3冊の移動ペイロード。
+        - 処理: 支店間移動APIへPOSTリクエストする。
+        - 期待値: 400 が返り、移動先の所蔵行が作成されないこと。
+        """
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/",
+            {
+                "book": self.book.id,
+                "from_branch": self.branch.id,
+                "to_branch": self.second_branch.id,
+                "amount": 3,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.amount, 2)
+        self.assertFalse(
+            BranchBookStock.objects.filter(
+                book=self.book, branch=self.second_branch
+            ).exists()
+        )
+
+    def test_branch_book_stock_transfer_rejects_missing_source_stock(self):
+        """
+        シナリオ:
+        - 入力: 移動元に対象書籍の所蔵行がない移動ペイロード。
+        - 処理: 支店間移動APIへPOSTリクエストする。
+        - 期待値: 400 が返り、移動先の所蔵行が作成されないこと。
+        """
+        other_book = Book.objects.create(
+            name="こころ",
+            category=self.category,
+            lead_text="近代文学です。",
+            isbn="9780000000003",
+            publication_date=date(2026, 1, 3),
+        )
+        other_book.authors.set([self.author])
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/",
+            {
+                "book": other_book.id,
+                "from_branch": self.branch.id,
+                "to_branch": self.second_branch.id,
+                "amount": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(
+            BranchBookStock.objects.filter(
+                book=other_book, branch=self.second_branch
+            ).exists()
+        )
+
     def test_lending_belongs_to_branch_book_stock(self):
         """
         シナリオ:
