@@ -3,7 +3,7 @@ from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.response import Response
 
-from .models import Author, Book, Branch, BranchBookStock, Category
+from .models import Author, Book, Branch, BranchBookStock, Category, Customer, Lending
 from .serializers import (
     AuthorSerializer,
     BranchBookStockTransferSerializer,
@@ -11,6 +11,9 @@ from .serializers import (
     BookSerializer,
     BranchSerializer,
     CategorySerializer,
+    CustomerSerializer,
+    LendingReturnSerializer,
+    LendingSerializer,
 )
 
 
@@ -23,6 +26,13 @@ class BranchList(generics.ListCreateAPIView):
 
 class BranchCreate(generics.CreateAPIView):
     serializer_class = BranchSerializer
+
+
+class CustomerList(generics.ListCreateAPIView):
+    serializer_class = CustomerSerializer
+
+    def get_queryset(self):
+        return Customer.objects.order_by("id")
 
 
 class AuthorList(generics.ListAPIView):
@@ -98,5 +108,30 @@ class BranchBookStockTransfer(generics.GenericAPIView):
         transfer = serializer.save()
         return Response(
             self.get_serializer(transfer).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class LendingList(generics.ListCreateAPIView):
+    serializer_class = LendingSerializer
+
+    def get_queryset(self):
+        return Lending.objects.select_related(
+            "branch_book_stock__book",
+            "branch_book_stock__branch",
+            "customer",
+            "contact_user",
+        ).order_by("-id")
+
+
+class LendingReturn(generics.GenericAPIView):
+    serializer_class = LendingReturnSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+        return Response(
+            self.get_serializer(result).data,
             status=status.HTTP_200_OK,
         )

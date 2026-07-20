@@ -63,22 +63,66 @@ class BranchBookStock(models.Model):
 class Lending(models.Model):
     """
     支店別所蔵を起点にした貸出情報。
-    貸出日と created_at は同じになり、返却が終わると active が False になる。
+
+    Attributes:
+        return_date: 返却予定日。
+        branch_book_stock: 貸出対象の支店別所蔵。
+        active: 返却前の貸出であるかどうか。
+        customer: 貸出を受ける利用者。
+        contact_user: 貸出・返却を受け付けた職員ユーザー。
+        created_at: 貸出登録日。
+        updated_at: 更新日。
     """
 
-    return_date = models.DateField()
+    return_date = models.DateField("返却予定日")
     branch_book_stock = models.ForeignKey(
-        "BranchBookStock", related_name="lendings", on_delete=models.CASCADE
+        "BranchBookStock",
+        related_name="lendings",
+        on_delete=models.CASCADE,
+        verbose_name="支店別所蔵",
     )
-    active = models.BooleanField(default=True)
-    customer_user = models.ForeignKey(
-        User, related_name="customer", on_delete=models.CASCADE
+    active = models.BooleanField("貸出中", default=True)
+    customer = models.ForeignKey(
+        "Customer",
+        related_name="lendings",
+        on_delete=models.CASCADE,
+        verbose_name="利用者",
     )
     contact_user = models.ForeignKey(
-        User, related_name="contact", on_delete=models.CASCADE
+        User,
+        related_name="contact",
+        on_delete=models.CASCADE,
+        verbose_name="対応者",
     )
-    created_at = models.DateField(auto_now_add=True)
-    updated_at = models.DateField(auto_now=True, null=True)
+    created_at = models.DateField("貸出登録日", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    def __str__(self):
+        book_name = str(self.branch_book_stock.book.name)
+        customer_name = str(self.customer.name)
+        return f"{customer_name}: {book_name}"
+
+
+class Customer(models.Model):
+    """
+    図書館を利用して本を借りる利用者。
+
+    Attributes:
+        name: 利用者名。
+        phone: 電話番号。
+        max_lending_count: 同時に貸出できる上限冊数。
+        created_at: 登録日。
+        updated_at: 更新日。
+    """
+
+    name = models.CharField("利用者名", max_length=255, unique=True)
+    phone = models.CharField("電話番号", max_length=20, blank=True)
+    max_lending_count = models.PositiveSmallIntegerField("貸出上限冊数", default=5)
+    created_at = models.DateField("登録日", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    def __str__(self):
+        return str(self.name)
 
 
 class Branch(models.Model):
