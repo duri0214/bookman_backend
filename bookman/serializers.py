@@ -19,7 +19,6 @@ from bookman.domain.service import (
     LendingStockUnavailableError,
     SourceStockNotFoundError,
 )
-from django.contrib.auth.models import User
 
 from bookman.models import (
     Author,
@@ -29,6 +28,7 @@ from bookman.models import (
     Category,
     Customer,
     Lending,
+    LibraryStaff,
 )
 
 
@@ -54,6 +54,12 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = ["id", "name", "phone", "max_lending_count"]
+
+
+class LibraryStaffSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LibraryStaff
+        fields = ["id", "user", "name", "branch", "role"]
 
 
 class BookBranchStockSerializer(serializers.ModelSerializer):
@@ -135,7 +141,7 @@ class LendingSerializer(serializers.ModelSerializer):
     """
     貸出APIの入出力。
 
-    入力では支店別所蔵、利用者、対応者、返却予定日を受け取り、
+    入力では支店別所蔵、利用者、対応職員、返却予定日を受け取り、
     レスポンスでは貸出中フラグと表示用名称も返す。
     """
 
@@ -145,8 +151,8 @@ class LendingSerializer(serializers.ModelSerializer):
     customer = serializers.PrimaryKeyRelatedField(
         queryset=Customer.objects.order_by("id")
     )
-    contact_user = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.order_by("id")
+    contact_staff = serializers.PrimaryKeyRelatedField(
+        queryset=LibraryStaff.objects.order_by("id")
     )
     book_name = serializers.CharField(
         source="branch_book_stock.book.name", read_only=True
@@ -155,6 +161,9 @@ class LendingSerializer(serializers.ModelSerializer):
         source="branch_book_stock.branch.name", read_only=True
     )
     customer_name = serializers.CharField(source="customer.name", read_only=True)
+    contact_staff_name = serializers.CharField(
+        source="contact_staff.name", read_only=True
+    )
 
     class Meta:
         model = Lending
@@ -165,7 +174,8 @@ class LendingSerializer(serializers.ModelSerializer):
             "branch_name",
             "customer",
             "customer_name",
-            "contact_user",
+            "contact_staff",
+            "contact_staff_name",
             "return_date",
             "active",
         ]

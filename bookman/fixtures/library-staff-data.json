@@ -6,7 +6,7 @@
       "password": "",
       "last_login": null,
       "is_superuser": false,
-      "username": "図書館対応者",
+      "username": "library_contact",
       "first_name": "",
       "last_name": "",
       "email": "",
@@ -15,6 +15,16 @@
       "date_joined": "2026-01-01T00:00:00Z",
       "groups": [],
       "user_permissions": []
+    }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1001,
+    "fields": {
+      "user": 1001,
+      "name": "図書館対応者",
+      "branch": 1,
+      "role": "counter"
     }
   }
 ]

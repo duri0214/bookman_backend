@@ -12,6 +12,7 @@ from bookman.models import (
     Category,
     Customer,
     Lending,
+    LibraryStaff,
 )
 
 
@@ -45,6 +46,12 @@ class BookmanApiTest(APITestCase):
             max_lending_count=2,
         )
         cls.contact_user = User.objects.create_user(username="contact")
+        cls.contact_staff = LibraryStaff.objects.create(
+            user=cls.contact_user,
+            name="貸出担当者",
+            branch=cls.branch,
+            role="counter",
+        )
 
         cls.book = Book.objects.create(
             name="吾輩は猫である",
@@ -444,7 +451,7 @@ class BookmanApiTest(APITestCase):
             branch_book_stock=self.branch_stock,
             return_date=date(2026, 1, 15),
             customer=self.customer,
-            contact_user=self.contact_user,
+            contact_staff=self.contact_staff,
         )
 
         self.assertEqual(lending.branch_book_stock, self.branch_stock)
@@ -471,6 +478,29 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["max_lending_count"], 3)
         self.assertTrue(Customer.objects.filter(name="鈴木一郎").exists())
 
+    def test_staff_list_returns_business_staff_fields(self):
+        """
+        シナリオ:
+        - 入力: 認証ユーザーと紐づく職員データが登録されている状態。
+        - 処理: 職員一覧APIへGETリクエストする。
+        - 期待値: 職員ID、認証ユーザーID、職員名、所属支店、権限種別が返ること。
+        """
+        response = self.client.get("/bookman/api/staff/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            [
+                {
+                    "id": self.contact_staff.id,
+                    "user": self.contact_user.id,
+                    "name": "貸出担当者",
+                    "branch": self.branch.id,
+                    "role": "counter",
+                }
+            ],
+        )
+
     def test_lending_create_accepts_available_stock(self):
         """
         シナリオ:
@@ -483,7 +513,7 @@ class BookmanApiTest(APITestCase):
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
-                "contact_user": self.contact_user.id,
+                "contact_staff": self.contact_staff.id,
                 "return_date": "2026-01-15",
             },
             format="json",
@@ -492,6 +522,7 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(response.data["active"])
         self.assertEqual(response.data["customer_name"], "山田太郎")
+        self.assertEqual(response.data["contact_staff_name"], "貸出担当者")
         self.assertTrue(
             Lending.objects.filter(
                 branch_book_stock=self.branch_stock,
@@ -510,7 +541,7 @@ class BookmanApiTest(APITestCase):
         Lending.objects.create(
             branch_book_stock=self.branch_stock,
             customer=self.customer,
-            contact_user=self.contact_user,
+            contact_staff=self.contact_staff,
             return_date=date(2026, 1, 15),
         )
 
@@ -519,7 +550,7 @@ class BookmanApiTest(APITestCase):
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
-                "contact_user": self.contact_user.id,
+                "contact_staff": self.contact_staff.id,
                 "return_date": "2026-01-16",
             },
             format="json",
@@ -547,7 +578,7 @@ class BookmanApiTest(APITestCase):
             Lending.objects.create(
                 branch_book_stock=self.branch_stock,
                 customer=Customer.objects.create(name=f"貸出利用者{index}"),
-                contact_user=self.contact_user,
+                contact_staff=self.contact_staff,
                 return_date=date(2026, 1, 15),
             )
 
@@ -556,7 +587,7 @@ class BookmanApiTest(APITestCase):
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": third_customer.id,
-                "contact_user": self.contact_user.id,
+                "contact_staff": self.contact_staff.id,
                 "return_date": "2026-01-16",
             },
             format="json",
@@ -609,7 +640,7 @@ class BookmanApiTest(APITestCase):
             Lending.objects.create(
                 branch_book_stock=stock,
                 customer=self.customer,
-                contact_user=self.contact_user,
+                contact_staff=self.contact_staff,
                 return_date=date(2026, 1, 15),
             )
 
@@ -618,7 +649,7 @@ class BookmanApiTest(APITestCase):
             {
                 "branch_book_stock": third_stock.id,
                 "customer": self.customer.id,
-                "contact_user": self.contact_user.id,
+                "contact_staff": self.contact_staff.id,
                 "return_date": "2026-01-16",
             },
             format="json",
@@ -644,7 +675,7 @@ class BookmanApiTest(APITestCase):
         lending = Lending.objects.create(
             branch_book_stock=self.branch_stock,
             customer=self.customer,
-            contact_user=self.contact_user,
+            contact_staff=self.contact_staff,
             return_date=date(2026, 1, 15),
         )
 
@@ -669,7 +700,7 @@ class BookmanApiTest(APITestCase):
         lending = Lending.objects.create(
             branch_book_stock=self.branch_stock,
             customer=self.customer,
-            contact_user=self.contact_user,
+            contact_staff=self.contact_staff,
             return_date=date(2026, 1, 15),
             active=False,
         )
