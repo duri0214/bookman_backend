@@ -5,7 +5,9 @@
     "fields": {
       "name": "図書館対応者",
       "branch": 1,
-      "role": "counter"
+      "role": "counter",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
     }
   }
 ]
