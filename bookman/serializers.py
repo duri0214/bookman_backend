@@ -7,6 +7,7 @@ API リクエストでは JSON の入力値を検証して model に保存でき
 
 from rest_framework import serializers
 
+from bookman.exceptions import BusinessRuleApiError
 from bookman.domain.service import (
     BranchBookStockTransferService,
     CustomerLendingLimitExceededError,
@@ -177,16 +178,19 @@ class LendingSerializer(serializers.ModelSerializer):
         try:
             return LendingService().lend(**validated_data)
         except DuplicateBookLendingError as exc:
-            raise serializers.ValidationError(
-                {"customer": "同じ利用者は同じ本を2冊以上借りられません。"}
+            raise BusinessRuleApiError(
+                code="duplicate_book_lending",
+                message="同じ利用者は同じ本を2冊以上借りられません。",
             ) from exc
         except LendingStockUnavailableError as exc:
-            raise serializers.ValidationError(
-                {"branch_book_stock": "対象の本は貸出可能冊数が残っていません。"}
+            raise BusinessRuleApiError(
+                code="lending_stock_unavailable",
+                message="対象の本は貸出可能冊数が残っていません。",
             ) from exc
         except CustomerLendingLimitExceededError as exc:
-            raise serializers.ValidationError(
-                {"customer": "利用者の貸出上限冊数に達しています。"}
+            raise BusinessRuleApiError(
+                code="customer_lending_limit_exceeded",
+                message="利用者の貸出上限冊数に達しています。",
             ) from exc
 
 
@@ -207,12 +211,14 @@ class LendingReturnSerializer(serializers.Serializer):
         try:
             return LendingService().return_lending(lending_id=validated_data["lending"])
         except LendingNotFoundError as exc:
-            raise serializers.ValidationError(
-                {"lending": "返却対象の貸出情報が見つかりません。"}
+            raise BusinessRuleApiError(
+                code="lending_not_found",
+                message="返却対象の貸出情報が見つかりません。",
             ) from exc
         except LendingAlreadyReturnedError as exc:
-            raise serializers.ValidationError(
-                {"lending": "返却対象の貸出情報はすでに返却済みです。"}
+            raise BusinessRuleApiError(
+                code="lending_already_returned",
+                message="返却対象の貸出情報はすでに返却済みです。",
             ) from exc
 
     def to_representation(self, instance):
