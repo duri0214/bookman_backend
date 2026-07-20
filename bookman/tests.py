@@ -228,6 +228,27 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["book"], self.book.id)
         self.assertEqual(response.data[0]["book_name"], "吾輩は猫である")
         self.assertEqual(response.data[0]["amount"], 2)
+        self.assertEqual(response.data[0]["available_amount"], 2)
+
+    def test_branch_book_stock_list_returns_available_amount(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数2冊のうち1冊が貸出中の状態。
+        - 処理: 所蔵数一覧APIへGETリクエストする。
+        - 期待値: amount は総所蔵数2、available_amount は貸出中1冊を差し引いた1で返ること。
+        """
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+
+        response = self.client.get("/bookman/api/branch-book-stocks/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data[0]["amount"], 2)
+        self.assertEqual(response.data[0]["available_amount"], 1)
 
     def test_branch_book_stock_create_changes_book_total_amount_without_sync(self):
         """

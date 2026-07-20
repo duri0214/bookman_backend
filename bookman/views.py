@@ -1,4 +1,4 @@
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -105,8 +105,12 @@ class BranchBookStockList(generics.ListCreateAPIView):
     serializer_class = BranchBookStockSerializer
 
     def get_queryset(self):
-        return BranchBookStock.objects.select_related("branch", "book").order_by(
-            "book_id", "branch_id", "id"
+        return (
+            BranchBookStock.objects.select_related("branch", "book")
+            .annotate(
+                active_lending_count=Count("lendings", filter=Q(lendings__active=True))
+            )
+            .order_by("book_id", "branch_id", "id")
         )
 
 
@@ -114,7 +118,9 @@ class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
     serializer_class = BranchBookStockSerializer
 
     def get_queryset(self):
-        return BranchBookStock.objects.select_related("branch", "book")
+        return BranchBookStock.objects.select_related("branch", "book").annotate(
+            active_lending_count=Count("lendings", filter=Q(lendings__active=True))
+        )
 
 
 class BranchBookStockTransfer(generics.GenericAPIView):
