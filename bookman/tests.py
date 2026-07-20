@@ -60,6 +60,17 @@ class BookmanApiTest(APITestCase):
             amount=2,
         )
 
+    def assert_business_error_response(self, response, *, code, message):
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data,
+            {
+                "code": code,
+                "message": message,
+                "status_code": status.HTTP_400_BAD_REQUEST,
+            },
+        )
+
     def test_branch_list_returns_frontend_fields(self):
         """
         シナリオ:
@@ -494,7 +505,7 @@ class BookmanApiTest(APITestCase):
         シナリオ:
         - 入力: 利用者が同じ本をすでに貸出中の状態。
         - 処理: 同じ支店別所蔵に対して貸出APIへPOSTする。
-        - 期待値: 400 が返り、同じ利用者に2件目の貸出が作成されないこと。
+        - 期待値: 重複貸出コード付きの400が返り、同じ利用者に2件目の貸出が作成されないこと。
         """
         Lending.objects.create(
             branch_book_stock=self.branch_stock,
@@ -514,7 +525,11 @@ class BookmanApiTest(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_business_error_response(
+            response,
+            code="duplicate_book_lending",
+            message="同じ利用者は同じ本を2冊以上借りられません。",
+        )
         self.assertEqual(
             Lending.objects.filter(customer=self.customer, active=True).count(),
             1,
@@ -525,7 +540,7 @@ class BookmanApiTest(APITestCase):
         シナリオ:
         - 入力: 支店別所蔵数2冊がすべて別利用者へ貸出中の状態。
         - 処理: さらに別利用者で貸出APIへPOSTする。
-        - 期待値: 400 が返り、在庫数を超える貸出が作成されないこと。
+        - 期待値: 在庫不足コード付きの400が返り、在庫数を超える貸出が作成されないこと。
         """
         third_customer = Customer.objects.create(name="田中次郎")
         for index in range(2):
@@ -547,7 +562,11 @@ class BookmanApiTest(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_business_error_response(
+            response,
+            code="lending_stock_unavailable",
+            message="対象の本は貸出可能冊数が残っていません。",
+        )
         self.assertEqual(
             Lending.objects.filter(branch_book_stock=self.branch_stock).count(),
             2,
@@ -558,7 +577,7 @@ class BookmanApiTest(APITestCase):
         シナリオ:
         - 入力: 利用者の貸出上限2冊に達している状態。
         - 処理: 別の本で貸出APIへPOSTする。
-        - 期待値: 400 が返り、上限を超える貸出が作成されないこと。
+        - 期待値: 貸出上限超過コード付きの400が返り、上限を超える貸出が作成されないこと。
         """
         second_book = Book.objects.create(
             name="銀河鉄道の夜",
@@ -605,7 +624,11 @@ class BookmanApiTest(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_business_error_response(
+            response,
+            code="customer_lending_limit_exceeded",
+            message="利用者の貸出上限冊数に達しています。",
+        )
         self.assertEqual(
             Lending.objects.filter(customer=self.customer, active=True).count(),
             2,
@@ -641,7 +664,7 @@ class BookmanApiTest(APITestCase):
         シナリオ:
         - 入力: 返却済みの貸出情報が1件ある状態。
         - 処理: 返却APIへ同じ貸出IDをPOSTする。
-        - 期待値: 400 が返り、返却済み状態のまま変わらないこと。
+        - 期待値: 返却済みコード付きの400が返り、返却済み状態のまま変わらないこと。
         """
         lending = Lending.objects.create(
             branch_book_stock=self.branch_stock,
@@ -657,9 +680,32 @@ class BookmanApiTest(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_business_error_response(
+            response,
+            code="lending_already_returned",
+            message="返却対象の貸出情報はすでに返却済みです。",
+        )
         lending.refresh_from_db()
         self.assertFalse(lending.active)
+
+    def test_lending_return_rejects_missing_lending(self):
+        """
+        シナリオ:
+        - 入力: 存在しない貸出IDを指定した返却ペイロード。
+        - 処理: 返却APIへPOSTリクエストする。
+        - 期待値: 貸出未存在コード付きの400が返ること。
+        """
+        response = self.client.post(
+            "/bookman/api/lendings/return/",
+            {"lending": 999999},
+            format="json",
+        )
+
+        self.assert_business_error_response(
+            response,
+            code="lending_not_found",
+            message="返却対象の貸出情報が見つかりません。",
+        )
 
     def test_author_and_category_lists_are_ordered_by_id(self):
         """

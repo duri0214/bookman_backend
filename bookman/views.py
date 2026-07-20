@@ -3,6 +3,7 @@ from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.response import Response
 
+from .exceptions import BusinessRuleApiError
 from .models import Author, Book, Branch, BranchBookStock, Category, Customer, Lending
 from .serializers import (
     AuthorSerializer,
@@ -123,6 +124,19 @@ class LendingList(generics.ListCreateAPIView):
             "contact_user",
         ).order_by("-id")
 
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lending = serializer.save()
+        except BusinessRuleApiError as exc:
+            return Response(exc.to_response_data(), status=exc.status_code)
+
+        return Response(
+            self.get_serializer(lending).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class LendingReturn(generics.GenericAPIView):
     serializer_class = LendingReturnSerializer
@@ -130,7 +144,11 @@ class LendingReturn(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        result = serializer.save()
+        try:
+            result = serializer.save()
+        except BusinessRuleApiError as exc:
+            return Response(exc.to_response_data(), status=exc.status_code)
+
         return Response(
             self.get_serializer(result).data,
             status=status.HTTP_200_OK,
