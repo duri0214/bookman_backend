@@ -9,10 +9,26 @@ from rest_framework import serializers
 
 from bookman.domain.service import (
     BranchBookStockTransferService,
+    CustomerLendingLimitExceededError,
+    DuplicateBookLendingError,
     InsufficientStockError,
+    LendingAlreadyReturnedError,
+    LendingNotFoundError,
+    LendingService,
+    LendingStockUnavailableError,
     SourceStockNotFoundError,
 )
-from bookman.models import Author, Book, Branch, BranchBookStock, Category
+from django.contrib.auth.models import User
+
+from bookman.models import (
+    Author,
+    Book,
+    Branch,
+    BranchBookStock,
+    Category,
+    Customer,
+    Lending,
+)
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -31,6 +47,12 @@ class BranchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
         fields = ["id", "name", "address", "phone", "remark"]
+
+
+class CustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Customer
+        fields = ["id", "name", "phone", "max_lending_count"]
 
 
 class BookBranchStockSerializer(serializers.ModelSerializer):
@@ -106,6 +128,98 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"amount": "移動元支店の所蔵数が不足しています。"}
             ) from exc
+
+
+class LendingSerializer(serializers.ModelSerializer):
+    """
+    貸出APIの入出力。
+
+    入力では支店別所蔵、利用者、対応者、返却予定日を受け取り、
+    レスポンスでは貸出中フラグと表示用名称も返す。
+    """
+
+    branch_book_stock = serializers.PrimaryKeyRelatedField(
+        queryset=BranchBookStock.objects.order_by("id")
+    )
+    customer = serializers.PrimaryKeyRelatedField(
+        queryset=Customer.objects.order_by("id")
+    )
+    contact_user = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.order_by("id")
+    )
+    book_name = serializers.CharField(
+        source="branch_book_stock.book.name", read_only=True
+    )
+    branch_name = serializers.CharField(
+        source="branch_book_stock.branch.name", read_only=True
+    )
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+
+    class Meta:
+        model = Lending
+        fields = [
+            "id",
+            "branch_book_stock",
+            "book_name",
+            "branch_name",
+            "customer",
+            "customer_name",
+            "contact_user",
+            "return_date",
+            "active",
+        ]
+        read_only_fields = ["active"]
+
+    def create(self, validated_data):
+        """
+        貸出登録の業務処理を実行する。
+        """
+        try:
+            return LendingService().lend(**validated_data)
+        except DuplicateBookLendingError as exc:
+            raise serializers.ValidationError(
+                {"customer": "同じ利用者は同じ本を2冊以上借りられません。"}
+            ) from exc
+        except LendingStockUnavailableError as exc:
+            raise serializers.ValidationError(
+                {"branch_book_stock": "対象の本は貸出可能冊数が残っていません。"}
+            ) from exc
+        except CustomerLendingLimitExceededError as exc:
+            raise serializers.ValidationError(
+                {"customer": "利用者の貸出上限冊数に達しています。"}
+            ) from exc
+
+
+class LendingReturnSerializer(serializers.Serializer):
+    """
+    返却APIの入出力。
+
+    貸出IDを受け取り、返却後の貸出情報を返す。
+    """
+
+    lending = serializers.IntegerField(write_only=True, min_value=1)
+    returned_lending = LendingSerializer(read_only=True)
+
+    def create(self, validated_data):
+        """
+        返却の業務処理を実行する。
+        """
+        try:
+            return LendingService().return_lending(lending_id=validated_data["lending"])
+        except LendingNotFoundError as exc:
+            raise serializers.ValidationError(
+                {"lending": "返却対象の貸出情報が見つかりません。"}
+            ) from exc
+        except LendingAlreadyReturnedError as exc:
+            raise serializers.ValidationError(
+                {"lending": "返却対象の貸出情報はすでに返却済みです。"}
+            ) from exc
+
+    def to_representation(self, instance):
+        """
+        返却後の貸出情報を returned_lending として返す。
+        """
+        return {"returned_lending": LendingSerializer(instance.lending).data}
 
 
 class BookSerializer(serializers.ModelSerializer):

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from bookman.models import Book, Branch, BranchBookStock
+from bookman.models import Book, Branch, BranchBookStock, Lending
 
 
 @dataclass(frozen=True)
@@ -23,3 +23,15 @@ class BranchBookStockTransfer:
     amount: int
     source_stock: BranchBookStock
     destination_stock: BranchBookStock
+
+
+@dataclass(frozen=True)
+class LendingReturn:
+    """
+    返却処理後の貸出状態。
+
+    Attributes:
+        lending: 返却済みに更新された貸出情報。
+    """
+
+    lending: Lending

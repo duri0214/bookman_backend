@@ -4,7 +4,15 @@ from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from bookman.models import Author, Book, Branch, BranchBookStock, Category, Lending
+from bookman.models import (
+    Author,
+    Book,
+    Branch,
+    BranchBookStock,
+    Category,
+    Customer,
+    Lending,
+)
 
 
 class BookmanApiTest(APITestCase):
@@ -26,6 +34,17 @@ class BookmanApiTest(APITestCase):
         cls.second_category = Category.objects.create(name="実用書", color="#00ff00")
         cls.author = Author.objects.create(name="夏目漱石")
         cls.second_author = Author.objects.create(name="宮沢賢治")
+        cls.customer = Customer.objects.create(
+            name="山田太郎",
+            phone="090-0000-0000",
+            max_lending_count=2,
+        )
+        cls.second_customer = Customer.objects.create(
+            name="佐藤花子",
+            phone="090-0000-0001",
+            max_lending_count=2,
+        )
+        cls.contact_user = User.objects.create_user(username="contact")
 
         cls.book = Book.objects.create(
             name="吾輩は猫である",
@@ -410,18 +429,237 @@ class BookmanApiTest(APITestCase):
         - 処理: 支店別所蔵数に紐づく貸出情報を作成する。
         - 期待値: 貸出情報から対象の支店別所蔵数を参照でき、active の初期値が True になること。
         """
-        customer_user = User.objects.create_user(username="customer")
-        contact_user = User.objects.create_user(username="contact")
-
         lending = Lending.objects.create(
             branch_book_stock=self.branch_stock,
             return_date=date(2026, 1, 15),
-            customer_user=customer_user,
-            contact_user=contact_user,
+            customer=self.customer,
+            contact_user=self.contact_user,
         )
 
         self.assertEqual(lending.branch_book_stock, self.branch_stock)
         self.assertTrue(lending.active)
+
+    def test_customer_list_endpoint_accepts_create_request(self):
+        """
+        シナリオ:
+        - 入力: 利用者登録ペイロード。
+        - 処理: 利用者一覧APIへPOSTリクエストする。
+        - 期待値: 利用者が作成され、貸出上限冊数がレスポンスに返ること。
+        """
+        response = self.client.post(
+            "/bookman/api/customers/",
+            {
+                "name": "鈴木一郎",
+                "phone": "090-0000-0002",
+                "max_lending_count": 3,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["max_lending_count"], 3)
+        self.assertTrue(Customer.objects.filter(name="鈴木一郎").exists())
+
+    def test_lending_create_accepts_available_stock(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数が2冊あり、利用者がまだ対象書籍を借りていない状態。
+        - 処理: 貸出APIへ貸出登録リクエストをPOSTする。
+        - 期待値: 貸出情報が作成され、active が True で返ること。
+        """
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+                "contact_user": self.contact_user.id,
+                "return_date": "2026-01-15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["active"])
+        self.assertEqual(response.data["customer_name"], "山田太郎")
+        self.assertTrue(
+            Lending.objects.filter(
+                branch_book_stock=self.branch_stock,
+                customer=self.customer,
+                active=True,
+            ).exists()
+        )
+
+    def test_lending_create_rejects_duplicate_book_for_same_customer(self):
+        """
+        シナリオ:
+        - 入力: 利用者が同じ本をすでに貸出中の状態。
+        - 処理: 同じ支店別所蔵に対して貸出APIへPOSTする。
+        - 期待値: 400 が返り、同じ利用者に2件目の貸出が作成されないこと。
+        """
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_user=self.contact_user,
+            return_date=date(2026, 1, 15),
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+                "contact_user": self.contact_user.id,
+                "return_date": "2026-01-16",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            Lending.objects.filter(customer=self.customer, active=True).count(),
+            1,
+        )
+
+    def test_lending_create_rejects_unavailable_stock_for_other_customer(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数2冊がすべて別利用者へ貸出中の状態。
+        - 処理: さらに別利用者で貸出APIへPOSTする。
+        - 期待値: 400 が返り、在庫数を超える貸出が作成されないこと。
+        """
+        third_customer = Customer.objects.create(name="田中次郎")
+        for index in range(2):
+            Lending.objects.create(
+                branch_book_stock=self.branch_stock,
+                customer=Customer.objects.create(name=f"貸出利用者{index}"),
+                contact_user=self.contact_user,
+                return_date=date(2026, 1, 15),
+            )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": third_customer.id,
+                "contact_user": self.contact_user.id,
+                "return_date": "2026-01-16",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            Lending.objects.filter(branch_book_stock=self.branch_stock).count(),
+            2,
+        )
+
+    def test_lending_create_rejects_customer_lending_limit(self):
+        """
+        シナリオ:
+        - 入力: 利用者の貸出上限2冊に達している状態。
+        - 処理: 別の本で貸出APIへPOSTする。
+        - 期待値: 400 が返り、上限を超える貸出が作成されないこと。
+        """
+        second_book = Book.objects.create(
+            name="銀河鉄道の夜",
+            category=self.category,
+            lead_text="童話です。",
+            isbn="9780000000004",
+            publication_date=date(2026, 1, 4),
+        )
+        third_book = Book.objects.create(
+            name="注文の多い料理店",
+            category=self.category,
+            lead_text="童話集です。",
+            isbn="9780000000005",
+            publication_date=date(2026, 1, 5),
+        )
+        second_book.authors.set([self.author])
+        third_book.authors.set([self.author])
+        second_stock = BranchBookStock.objects.create(
+            branch=self.branch,
+            book=second_book,
+            amount=1,
+        )
+        third_stock = BranchBookStock.objects.create(
+            branch=self.branch,
+            book=third_book,
+            amount=1,
+        )
+        for stock in [self.branch_stock, second_stock]:
+            Lending.objects.create(
+                branch_book_stock=stock,
+                customer=self.customer,
+                contact_user=self.contact_user,
+                return_date=date(2026, 1, 15),
+            )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": third_stock.id,
+                "customer": self.customer.id,
+                "contact_user": self.contact_user.id,
+                "return_date": "2026-01-16",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            Lending.objects.filter(customer=self.customer, active=True).count(),
+            2,
+        )
+
+    def test_lending_return_marks_lending_inactive(self):
+        """
+        シナリオ:
+        - 入力: 貸出中の貸出情報が1件ある状態。
+        - 処理: 返却APIへ貸出IDをPOSTする。
+        - 期待値: active が False に更新され、返却済みの貸出情報が返ること。
+        """
+        lending = Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_user=self.contact_user,
+            return_date=date(2026, 1, 15),
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/return/",
+            {"lending": lending.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        lending.refresh_from_db()
+        self.assertFalse(lending.active)
+        self.assertFalse(response.data["returned_lending"]["active"])
+
+    def test_lending_return_rejects_already_returned_lending(self):
+        """
+        シナリオ:
+        - 入力: 返却済みの貸出情報が1件ある状態。
+        - 処理: 返却APIへ同じ貸出IDをPOSTする。
+        - 期待値: 400 が返り、返却済み状態のまま変わらないこと。
+        """
+        lending = Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_user=self.contact_user,
+            return_date=date(2026, 1, 15),
+            active=False,
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/return/",
+            {"lending": lending.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        lending.refresh_from_db()
+        self.assertFalse(lending.active)
 
     def test_author_and_category_lists_are_ordered_by_id(self):
         """
