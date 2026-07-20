@@ -2,7 +2,14 @@ from django.db import transaction
 
 from bookman.domain.repository import BranchBookStockRepository, LendingRepository
 from bookman.domain.valueobject import BranchBookStockTransfer, LendingReturn
-from bookman.models import Book, Branch, BranchBookStock, Customer, Lending
+from bookman.models import (
+    Book,
+    Branch,
+    BranchBookStock,
+    Customer,
+    Lending,
+    LibraryStaff,
+)
 
 
 class BranchBookStockTransferError(Exception):
@@ -128,7 +135,7 @@ class LendingService:
         *,
         branch_book_stock: BranchBookStock,
         customer: Customer,
-        contact_user,
+        contact_staff: LibraryStaff,
         return_date,
     ) -> Lending:
         """
@@ -161,7 +168,7 @@ class LendingService:
             return self.lending_repository.create(
                 stock=stock,
                 customer=customer,
-                contact_user=contact_user,
+                contact_staff=contact_staff,
                 return_date=return_date,
             )
 

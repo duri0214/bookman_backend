@@ -1,4 +1,3 @@
-from django.contrib.auth.models import User
 from django.db import models
 
 
@@ -60,6 +59,35 @@ class BranchBookStock(models.Model):
         return f"{book_name}({self.amount}) {branch_name}"
 
 
+class LibraryStaff(models.Model):
+    """
+    図書館業務を担当する職員。
+
+    Attributes:
+        name: 職員名。
+        branch: 所属支店。
+        role: 業務上の権限種別。
+        created_at: 登録日。
+        updated_at: 更新日。
+    """
+
+    name = models.CharField("職員名", max_length=255, unique=True)
+    branch = models.ForeignKey(
+        "Branch",
+        related_name="staff_members",
+        on_delete=models.PROTECT,
+        verbose_name="所属支店",
+        null=True,
+        blank=True,
+    )
+    role = models.CharField("権限種別", max_length=50, blank=True)
+    created_at = models.DateField("登録日", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    def __str__(self):
+        return str(self.name)
+
+
 class Lending(models.Model):
     """
     支店別所蔵を起点にした貸出情報。
@@ -69,7 +97,7 @@ class Lending(models.Model):
         branch_book_stock: 貸出対象の支店別所蔵。
         active: 返却前の貸出であるかどうか。
         customer: 貸出を受ける利用者。
-        contact_user: 貸出・返却を受け付けた職員ユーザー。
+        contact_staff: 貸出・返却を受け付けた図書館職員。
         created_at: 貸出登録日。
         updated_at: 更新日。
     """
@@ -88,8 +116,8 @@ class Lending(models.Model):
         on_delete=models.CASCADE,
         verbose_name="利用者",
     )
-    contact_user = models.ForeignKey(
-        User,
+    contact_staff = models.ForeignKey(
+        "LibraryStaff",
         related_name="contact",
         on_delete=models.CASCADE,
         verbose_name="対応者",

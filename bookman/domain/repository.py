@@ -1,6 +1,13 @@
 from django.utils import timezone
 
-from bookman.models import Book, Branch, BranchBookStock, Customer, Lending
+from bookman.models import (
+    Book,
+    Branch,
+    BranchBookStock,
+    Customer,
+    Lending,
+    LibraryStaff,
+)
 
 
 class BranchBookStockRepository:
@@ -82,7 +89,7 @@ class LendingRepository:
         *,
         stock: BranchBookStock,
         customer: Customer,
-        contact_user,
+        contact_staff: LibraryStaff,
         return_date,
     ) -> Lending:
         """
@@ -91,7 +98,7 @@ class LendingRepository:
         return Lending.objects.create(
             branch_book_stock=stock,
             customer=customer,
-            contact_user=contact_user,
+            contact_staff=contact_staff,
             return_date=return_date,
         )
 

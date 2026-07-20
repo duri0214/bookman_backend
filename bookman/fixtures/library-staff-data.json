@@ -1,0 +1,11 @@
+[
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1001,
+    "fields": {
+      "name": "図書館対応者",
+      "branch": 1,
+      "role": "counter"
+    }
+  }
+]

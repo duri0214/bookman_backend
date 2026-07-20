@@ -6,6 +6,7 @@ urlpatterns = [
     path("api/branches/", views.BranchList.as_view(), name="branch_list"),
     path("api/branches/create/", views.BranchCreate.as_view(), name="branch_create"),
     path("api/customers/", views.CustomerList.as_view(), name="customer_list"),
+    path("api/staff/", views.LibraryStaffList.as_view(), name="library_staff_list"),
     path("api/books/", views.BookList.as_view(), name="book_list"),
     path("api/books/create/", views.BookCreate.as_view(), name="book_create"),
     path("api/books/<int:pk>/", views.BookDetail.as_view(), name="book_detail"),

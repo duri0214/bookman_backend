@@ -4,7 +4,16 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 
 from .exceptions import BusinessRuleApiError
-from .models import Author, Book, Branch, BranchBookStock, Category, Customer, Lending
+from .models import (
+    Author,
+    Book,
+    Branch,
+    BranchBookStock,
+    Category,
+    Customer,
+    Lending,
+    LibraryStaff,
+)
 from .serializers import (
     AuthorSerializer,
     BranchBookStockTransferSerializer,
@@ -15,6 +24,7 @@ from .serializers import (
     CustomerSerializer,
     LendingReturnSerializer,
     LendingSerializer,
+    LibraryStaffSerializer,
 )
 
 
@@ -34,6 +44,13 @@ class CustomerList(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return Customer.objects.order_by("id")
+
+
+class LibraryStaffList(generics.ListCreateAPIView):
+    serializer_class = LibraryStaffSerializer
+
+    def get_queryset(self):
+        return LibraryStaff.objects.select_related("branch").order_by("id")
 
 
 class AuthorList(generics.ListAPIView):
@@ -121,7 +138,7 @@ class LendingList(generics.ListCreateAPIView):
             "branch_book_stock__book",
             "branch_book_stock__branch",
             "customer",
-            "contact_user",
+            "contact_staff",
         ).order_by("-id")
 
     def post(self, request, *args, **kwargs):
