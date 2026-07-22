@@ -842,6 +842,47 @@ class BookmanApiTest(APITestCase):
             1,
         )
 
+    def test_reservation_create_rejects_customer_lending_same_book(self):
+        """
+        シナリオ:
+        - 入力: 利用者が同じ本をすでに貸出中で、同じ支店別所蔵の貸出可能冊数が0の状態。
+        - 処理: 予約一覧APIへその利用者の予約登録リクエストをPOSTする。
+        - 期待値: 同じ本を貸出中の利用者は予約できないコード付きの400が返り、予約が作成されないこと。
+        """
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=Customer.objects.create(name="貸出中利用者"),
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+
+        response = self.client.post(
+            "/bookman/api/reservations/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+            },
+            format="json",
+        )
+
+        self.assert_business_error_response(
+            response,
+            code="duplicate_book_reservation",
+            message="同じ本を貸出中の利用者は予約できません。",
+        )
+        self.assertFalse(
+            Reservation.objects.filter(
+                branch_book_stock=self.branch_stock,
+                customer=self.customer,
+            ).exists()
+        )
+
     def test_lending_return_holds_oldest_waiting_reservation(self):
         """
         シナリオ:

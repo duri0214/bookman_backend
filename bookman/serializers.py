@@ -12,6 +12,7 @@ from bookman.domain.service import (
     BranchBookStockTransferService,
     CustomerLendingLimitExceededError,
     DuplicateBookLendingError,
+    DuplicateBookReservationError,
     DuplicateReservationError,
     InsufficientStockError,
     LendingAlreadyReturnedError,
@@ -286,6 +287,11 @@ class ReservationSerializer(serializers.ModelSerializer):
             raise BusinessRuleApiError(
                 code="duplicate_reservation",
                 message="同じ利用者は同じ支店別所蔵へ重複して予約できません。",
+            ) from exc
+        except DuplicateBookReservationError as exc:
+            raise BusinessRuleApiError(
+                code="duplicate_book_reservation",
+                message="同じ本を貸出中の利用者は予約できません。",
             ) from exc
 
 

@@ -89,6 +89,12 @@ class DuplicateReservationError(ReservationRuleError):
     """
 
 
+class DuplicateBookReservationError(ReservationRuleError):
+    """
+    同じ利用者が同じ書籍を貸出中の場合の予約例外。
+    """
+
+
 class ReservationNotFoundError(ReservationRuleError):
     """
     取消対象の予約情報が存在しない場合の例外。
@@ -294,6 +300,12 @@ class ReservationService:
                 customer=customer,
             ):
                 raise DuplicateReservationError
+
+            if self.lending_repository.exists_active_book_by_customer(
+                customer=customer,
+                book=stock.book,
+            ):
+                raise DuplicateBookReservationError
 
             active_stock_count = self.lending_repository.count_active_by_stock(stock)
             held_stock_count = self.reservation_repository.count_held_by_stock(stock)
