@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, timedelta
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -12,6 +13,7 @@ from bookman.models import (
     Customer,
     Lending,
     LibraryStaff,
+    Reservation,
 )
 
 
@@ -682,6 +684,42 @@ class BookmanApiTest(APITestCase):
             2,
         )
 
+    def test_lending_create_fulfills_held_reservation(self):
+        """
+        シナリオ:
+        - 入力: 1冊が貸出中、1冊が対象利用者へ取り置き中の支店別所蔵。
+        - 処理: 取り置き中の利用者で貸出APIへPOSTする。
+        - 期待値: 貸出情報が作成され、取り置き予約が fulfilled へ更新されること。
+        """
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+        reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.second_customer,
+            status=Reservation.Status.HELD,
+            hold_expires_on=date(2026, 1, 22),
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.second_customer.id,
+                "contact_staff": self.contact_staff.id,
+                "return_date": "2026-01-16",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, Reservation.Status.FULFILLED)
+        self.assertIsNone(reservation.hold_expires_on)
+
     def test_lending_return_marks_lending_inactive(self):
         """
         シナリオ:
@@ -706,6 +744,265 @@ class BookmanApiTest(APITestCase):
         lending.refresh_from_db()
         self.assertFalse(lending.active)
         self.assertFalse(response.data["returned_lending"]["active"])
+        self.assertIsNone(response.data["held_reservation"])
+
+    def test_reservation_create_accepts_unavailable_stock(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数2冊がすべて貸出中で、別利用者が未予約の状態。
+        - 処理: 予約一覧APIへ予約登録リクエストをPOSTする。
+        - 期待値: 予約待ち状態の予約が作成され、一覧APIでも表示用名称つきで返ること。
+        """
+        reserve_customer = Customer.objects.create(name="予約利用者")
+        for index in range(2):
+            Lending.objects.create(
+                branch_book_stock=self.branch_stock,
+                customer=Customer.objects.create(name=f"貸出中利用者{index}"),
+                contact_staff=self.contact_staff,
+                return_date=date(2026, 1, 15),
+            )
+
+        response = self.client.post(
+            "/bookman/api/reservations/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": reserve_customer.id,
+            },
+            format="json",
+        )
+        list_response = self.client.get("/bookman/api/reservations/")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], Reservation.Status.WAITING)
+        self.assertEqual(response.data["customer_name"], "予約利用者")
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data[0]["book_name"], "吾輩は猫である")
+
+    def test_reservation_create_rejects_available_stock(self):
+        """
+        シナリオ:
+        - 入力: 貸出可能冊数が残っている支店別所蔵と利用者。
+        - 処理: 予約一覧APIへ予約登録リクエストをPOSTする。
+        - 期待値: 貸出可能な本は予約できないコード付きの400が返ること。
+        """
+        response = self.client.post(
+            "/bookman/api/reservations/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+            },
+            format="json",
+        )
+
+        self.assert_business_error_response(
+            response,
+            code="reservation_stock_available",
+            message="対象の本は貸出可能冊数が残っているため予約できません。",
+        )
+
+    def test_reservation_create_rejects_duplicate_open_reservation(self):
+        """
+        シナリオ:
+        - 入力: 同じ利用者が同じ支店別所蔵へ予約待ちを持つ状態。
+        - 処理: 予約一覧APIへ同じ予約登録リクエストをPOSTする。
+        - 期待値: 重複予約コード付きの400が返り、未完了予約が増えないこと。
+        """
+        for index in range(2):
+            Lending.objects.create(
+                branch_book_stock=self.branch_stock,
+                customer=Customer.objects.create(name=f"貸出利用者{index}"),
+                contact_staff=self.contact_staff,
+                return_date=date(2026, 1, 15),
+            )
+        Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+        )
+
+        response = self.client.post(
+            "/bookman/api/reservations/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+            },
+            format="json",
+        )
+
+        self.assert_business_error_response(
+            response,
+            code="duplicate_reservation",
+            message="同じ利用者は同じ支店別所蔵へ重複して予約できません。",
+        )
+        self.assertEqual(
+            Reservation.objects.filter(
+                branch_book_stock=self.branch_stock,
+                customer=self.customer,
+                status=Reservation.Status.WAITING,
+            ).count(),
+            1,
+        )
+
+    def test_lending_return_holds_oldest_waiting_reservation(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数2冊が貸出中で、同じ支店に予約待ちが2件ある状態。
+        - 処理: 返却APIへ先に作成した貸出IDをPOSTする。
+        - 期待値: 返却貸出が inactive になり、最古の予約だけが取り置き中になってレスポンスに利用者情報が返ること。
+        """
+        lending = Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.second_customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+        first_reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=Customer.objects.create(name="予約1番目"),
+        )
+        second_reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=Customer.objects.create(name="予約2番目"),
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/return/",
+            {"lending": lending.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        first_reservation.refresh_from_db()
+        second_reservation.refresh_from_db()
+        self.assertEqual(first_reservation.status, Reservation.Status.HELD)
+        self.assertIsNotNone(first_reservation.hold_expires_on)
+        self.assertEqual(second_reservation.status, Reservation.Status.WAITING)
+        self.assertEqual(
+            response.data["held_reservation"]["customer_name"],
+            "予約1番目",
+        )
+
+    def test_branch_book_stock_available_amount_excludes_held_reservation(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵数2冊のうち1冊が貸出中、1冊が取り置き中の状態。
+        - 処理: 所蔵数一覧APIへGETリクエストする。
+        - 期待値: available_amount は貸出中と取り置き中を差し引いた0で返ること。
+        """
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+        Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.second_customer,
+            status=Reservation.Status.HELD,
+            hold_expires_on=date(2026, 1, 22),
+        )
+
+        response = self.client.get("/bookman/api/branch-book-stocks/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data[0]["available_amount"], 0)
+
+    def test_reservation_cancel_promotes_next_waiting_reservation(self):
+        """
+        シナリオ:
+        - 入力: 取り置き中の予約と次の予約待ちが同じ支店別所蔵にある状態。
+        - 処理: 取り置き中予約の取消APIへPOSTする。
+        - 期待値: 取消対象は canceled になり、次の予約待ちが held に進むこと。
+        """
+        held_reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            status=Reservation.Status.HELD,
+            hold_expires_on=date(2026, 1, 22),
+        )
+        next_reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.second_customer,
+        )
+
+        response = self.client.post(
+            f"/bookman/api/reservations/{held_reservation.id}/cancel/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        held_reservation.refresh_from_db()
+        next_reservation.refresh_from_db()
+        self.assertEqual(held_reservation.status, Reservation.Status.CANCELED)
+        self.assertEqual(next_reservation.status, Reservation.Status.HELD)
+        self.assertEqual(
+            response.data["canceled_reservation"]["status"],
+            Reservation.Status.CANCELED,
+        )
+
+    def test_reservation_cancel_rejects_finished_reservation(self):
+        """
+        シナリオ:
+        - 入力: すでに期限切れになった予約。
+        - 処理: 予約取消APIへPOSTする。
+        - 期待値: 取消不可コード付きの400が返り、予約状態が変わらないこと。
+        """
+        reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            status=Reservation.Status.EXPIRED,
+        )
+
+        response = self.client.post(
+            f"/bookman/api/reservations/{reservation.id}/cancel/",
+            {},
+            format="json",
+        )
+
+        self.assert_business_error_response(
+            response,
+            code="reservation_not_cancelable",
+            message="取消対象の予約は取り消しできない状態です。",
+        )
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, Reservation.Status.EXPIRED)
+
+    def test_reservation_expire_marks_due_holds_and_promotes_next(self):
+        """
+        シナリオ:
+        - 入力: 期限日を過ぎた取り置きと、同じ支店別所蔵の次の予約待ちがある状態。
+        - 処理: 取り置き期限切れ処理APIへPOSTする。
+        - 期待値: 期限切れ対象は expired になり、次の予約待ちは held へ進むこと。
+        """
+        due_hold = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            status=Reservation.Status.HELD,
+            hold_expires_on=timezone.localdate() - timedelta(days=1),
+        )
+        next_reservation = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.second_customer,
+        )
+
+        response = self.client.post(
+            "/bookman/api/reservations/expire/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        due_hold.refresh_from_db()
+        next_reservation.refresh_from_db()
+        self.assertEqual(response.data["expired_count"], 1)
+        self.assertEqual(due_hold.status, Reservation.Status.EXPIRED)
+        self.assertEqual(next_reservation.status, Reservation.Status.HELD)
 
     def test_lending_return_rejects_already_returned_lending(self):
         """

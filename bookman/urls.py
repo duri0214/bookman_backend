@@ -31,6 +31,21 @@ urlpatterns = [
         views.LendingReturn.as_view(),
         name="lending_return",
     ),
+    path(
+        "api/reservations/",
+        views.ReservationList.as_view(),
+        name="reservation_list",
+    ),
+    path(
+        "api/reservations/<int:pk>/cancel/",
+        views.ReservationCancel.as_view(),
+        name="reservation_cancel",
+    ),
+    path(
+        "api/reservations/expire/",
+        views.ReservationExpire.as_view(),
+        name="reservation_expire",
+    ),
     path("api/authors/", views.AuthorList.as_view(), name="author_list"),
     path("api/categories/", views.CategoryList.as_view(), name="category_list"),
 ]

@@ -13,6 +13,7 @@ from .models import (
     Customer,
     Lending,
     LibraryStaff,
+    Reservation,
 )
 from .serializers import (
     AuthorSerializer,
@@ -25,6 +26,9 @@ from .serializers import (
     LendingReturnSerializer,
     LendingSerializer,
     LibraryStaffSerializer,
+    ReservationCancelSerializer,
+    ReservationExpireSerializer,
+    ReservationSerializer,
 )
 
 
@@ -108,7 +112,16 @@ class BranchBookStockList(generics.ListCreateAPIView):
         return (
             BranchBookStock.objects.select_related("branch", "book")
             .annotate(
-                active_lending_count=Count("lendings", filter=Q(lendings__active=True))
+                active_lending_count=Count(
+                    "lendings",
+                    filter=Q(lendings__active=True),
+                    distinct=True,
+                ),
+                held_reservation_count=Count(
+                    "reservations",
+                    filter=Q(reservations__status=Reservation.Status.HELD),
+                    distinct=True,
+                ),
             )
             .order_by("book_id", "branch_id", "id")
         )
@@ -119,7 +132,16 @@ class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return BranchBookStock.objects.select_related("branch", "book").annotate(
-            active_lending_count=Count("lendings", filter=Q(lendings__active=True))
+            active_lending_count=Count(
+                "lendings",
+                filter=Q(lendings__active=True),
+                distinct=True,
+            ),
+            held_reservation_count=Count(
+                "reservations",
+                filter=Q(reservations__status=Reservation.Status.HELD),
+                distinct=True,
+            ),
         )
 
 
@@ -172,6 +194,63 @@ class LendingReturn(generics.GenericAPIView):
         except BusinessRuleApiError as exc:
             return Response(exc.to_response_data(), status=exc.status_code)
 
+        return Response(
+            self.get_serializer(result).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ReservationList(generics.ListCreateAPIView):
+    serializer_class = ReservationSerializer
+
+    def get_queryset(self):
+        return Reservation.objects.select_related(
+            "branch_book_stock__book",
+            "branch_book_stock__branch",
+            "customer",
+        ).order_by("-id")
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reservation = serializer.save()
+        except BusinessRuleApiError as exc:
+            return Response(exc.to_response_data(), status=exc.status_code)
+
+        return Response(
+            self.get_serializer(reservation).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ReservationCancel(generics.GenericAPIView):
+    serializer_class = ReservationCancelSerializer
+
+    def post(self, request, pk):
+        serializer = self.get_serializer(
+            data=request.data,
+            context={"reservation_id": pk},
+        )
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = serializer.save()
+        except BusinessRuleApiError as exc:
+            return Response(exc.to_response_data(), status=exc.status_code)
+
+        return Response(
+            self.get_serializer(result).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ReservationExpire(generics.GenericAPIView):
+    serializer_class = ReservationExpireSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
         return Response(
             self.get_serializer(result).data,
             status=status.HTTP_200_OK,

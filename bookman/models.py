@@ -131,6 +131,65 @@ class Lending(models.Model):
         return f"{customer_name}: {book_name}"
 
 
+class Reservation(models.Model):
+    """
+    支店別所蔵に対する利用者の予約と取り置き状態。
+
+    Attributes:
+        status: 予約状態。waiting は予約待ち、held は取り置き中、canceled は取消済み、expired は期限切れ、fulfilled は貸出済み。
+        branch_book_stock: 予約対象の支店別所蔵。
+        customer: 予約した利用者。
+        hold_expires_on: 取り置き期限日。waiting の間は未設定。
+        created_at: 予約登録日時。
+        updated_at: 更新日。
+    """
+
+    class Status(models.TextChoices):
+        """
+        予約の状態管理。
+
+        Attributes:
+            WAITING: 予約待ち。
+            HELD: 取り置き中。
+            CANCELED: 取消済み。
+            EXPIRED: 取り置き期限切れ。
+            FULFILLED: 取り置き後に貸出済み。
+        """
+
+        WAITING = "waiting", "予約待ち"
+        HELD = "held", "取り置き中"
+        CANCELED = "canceled", "取消済み"
+        EXPIRED = "expired", "期限切れ"
+        FULFILLED = "fulfilled", "貸出済み"
+
+    status = models.CharField(
+        "予約状態",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.WAITING,
+    )
+    branch_book_stock = models.ForeignKey(
+        "BranchBookStock",
+        related_name="reservations",
+        on_delete=models.CASCADE,
+        verbose_name="支店別所蔵",
+    )
+    customer = models.ForeignKey(
+        "Customer",
+        related_name="reservations",
+        on_delete=models.CASCADE,
+        verbose_name="利用者",
+    )
+    hold_expires_on = models.DateField("取り置き期限日", null=True, blank=True)
+    created_at = models.DateTimeField("予約登録日時", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    def __str__(self):
+        book_name = str(self.branch_book_stock.book.name)
+        customer_name = str(self.customer.name)
+        return f"{customer_name}: {book_name} ({self.status})"
+
+
 class Customer(models.Model):
     """
     図書館を利用して本を借りる利用者。
