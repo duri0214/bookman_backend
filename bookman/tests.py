@@ -1004,6 +1004,53 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(due_hold.status, Reservation.Status.EXPIRED)
         self.assertEqual(next_reservation.status, Reservation.Status.HELD)
 
+    def test_reservation_expire_promotes_waiting_reservations_for_each_expired_hold(
+        self,
+    ):
+        """
+        シナリオ:
+        - 入力: 同じ支店別所蔵で期限日を過ぎた取り置きが2件、次の予約待ちが2件ある状態。
+        - 処理: 取り置き期限切れ処理APIへPOSTする。
+        - 期待値: 期限切れ対象2件が expired になり、空いた冊数分の予約待ち2件が held へ進むこと。
+        """
+        first_due_hold = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            status=Reservation.Status.HELD,
+            hold_expires_on=timezone.localdate() - timedelta(days=1),
+        )
+        second_due_hold = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.second_customer,
+            status=Reservation.Status.HELD,
+            hold_expires_on=timezone.localdate() - timedelta(days=1),
+        )
+        first_waiting = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=Customer.objects.create(name="期限切れ後予約1番目"),
+        )
+        second_waiting = Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=Customer.objects.create(name="期限切れ後予約2番目"),
+        )
+
+        response = self.client.post(
+            "/bookman/api/reservations/expire/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        first_due_hold.refresh_from_db()
+        second_due_hold.refresh_from_db()
+        first_waiting.refresh_from_db()
+        second_waiting.refresh_from_db()
+        self.assertEqual(response.data["expired_count"], 2)
+        self.assertEqual(first_due_hold.status, Reservation.Status.EXPIRED)
+        self.assertEqual(second_due_hold.status, Reservation.Status.EXPIRED)
+        self.assertEqual(first_waiting.status, Reservation.Status.HELD)
+        self.assertEqual(second_waiting.status, Reservation.Status.HELD)
+
     def test_lending_return_rejects_already_returned_lending(self):
         """
         シナリオ:

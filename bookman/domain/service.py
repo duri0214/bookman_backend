@@ -344,13 +344,8 @@ class ReservationService:
                 expired_reservations.append(reservation)
                 stocks_to_promote.append(reservation.branch_book_stock)
 
-            promoted_stock_ids = set()
             for stock in stocks_to_promote:
-                if stock.id in promoted_stock_ids:
-                    continue
-
                 self._hold_next_waiting(stock)
-                promoted_stock_ids.add(stock.id)
 
         return expired_reservations
 
