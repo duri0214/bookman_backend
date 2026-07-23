@@ -46,10 +46,6 @@ class BranchList(generics.ListCreateAPIView):
         return Branch.objects.order_by("id")
 
 
-class BranchCreate(generics.CreateAPIView):
-    serializer_class = BranchSerializer
-
-
 class BranchClosedDayList(generics.ListCreateAPIView):
     serializer_class = BranchClosedDaySerializer
 
