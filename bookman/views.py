@@ -87,6 +87,13 @@ class LibraryStaffList(generics.ListCreateAPIView):
         return LibraryStaff.objects.select_related("branch").order_by("id")
 
 
+class LibraryStaffDetail(generics.RetrieveUpdateAPIView):
+    serializer_class = LibraryStaffSerializer
+
+    def get_queryset(self):
+        return LibraryStaff.objects.select_related("branch")
+
+
 class SearchConditionAccessMixin:
     """
     リクエスト職員を起点に保存済み検索条件の参照・操作範囲を決める mixin。

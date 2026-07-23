@@ -786,6 +786,92 @@ class BookmanApiTest(APITestCase):
             ],
         )
 
+    def test_staff_detail_returns_business_staff_fields(self):
+        """
+        シナリオ:
+        - 入力: 職員データが登録されている状態。
+        - 処理: 職員詳細APIへGETリクエストする。
+        - 期待値: 職員ID、職員名、所属支店、権限種別が返ること。
+        """
+        response = self.client.get(f"/bookman/api/staff/{self.contact_staff.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            {
+                "id": self.contact_staff.id,
+                "name": "貸出担当者",
+                "branch": self.branch.id,
+                "role": "counter",
+            },
+        )
+
+    def test_staff_detail_updates_name_branch_and_role(self):
+        """
+        シナリオ:
+        - 入力: counter 権限の職員と別支店が登録されている状態。
+        - 処理: 職員詳細APIへPATCHリクエストする。
+        - 期待値: 職員名、所属支店、権限種別が更新されること。
+        """
+        response = self.client.patch(
+            f"/bookman/api/staff/{self.contact_staff.id}/",
+            {
+                "name": "管理担当者",
+                "branch": self.second_branch.id,
+                "role": "manager",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "管理担当者")
+        self.assertEqual(response.data["branch"], self.second_branch.id)
+        self.assertEqual(response.data["role"], "manager")
+        self.contact_staff.refresh_from_db()
+        self.assertEqual(self.contact_staff.name, "管理担当者")
+        self.assertEqual(self.contact_staff.branch, self.second_branch)
+        self.assertEqual(self.contact_staff.role, "manager")
+
+    def test_staff_update_rejects_invalid_role(self):
+        """
+        シナリオ:
+        - 入力: 職員データと不正な権限種別。
+        - 処理: 職員詳細APIへPATCHリクエストする。
+        - 期待値: 400 エラーとなり、職員の権限種別は更新されないこと。
+        """
+        response = self.client.patch(
+            f"/bookman/api/staff/{self.contact_staff.id}/",
+            {"role": "director"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("role", response.data)
+        self.contact_staff.refresh_from_db()
+        self.assertEqual(self.contact_staff.role, "counter")
+
+    def test_staff_role_update_changes_search_condition_permissions(self):
+        """
+        シナリオ:
+        - 入力: counter 権限の職員が登録されている状態。
+        - 処理: 職員詳細APIで manager へ更新し、検索条件権限APIへGETリクエストする。
+        - 期待値: 支店共有と管理者共有の作成可否が有効になること。
+        """
+        update_response = self.client.patch(
+            f"/bookman/api/staff/{self.contact_staff.id}/",
+            {"role": "manager"},
+            format="json",
+        )
+        permission_response = self.client.get(
+            f"/bookman/api/search-conditions/permissions/?staff={self.contact_staff.id}"
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(permission_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(permission_response.data["can_create_branch"])
+        self.assertTrue(permission_response.data["can_create_admin"])
+        self.assertEqual(permission_response.data["role"], "manager")
+
     def test_lending_create_accepts_available_stock(self):
         """
         シナリオ:

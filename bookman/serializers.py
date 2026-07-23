@@ -80,6 +80,8 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 
 class LibraryStaffSerializer(serializers.ModelSerializer):
+    role = serializers.ChoiceField(choices=["counter", "manager", "admin"])
+
     class Meta:
         model = LibraryStaff
         fields = ["id", "name", "branch", "role"]
@@ -162,9 +164,13 @@ class SearchConditionSerializer(serializers.ModelSerializer):
                     {"branch": "支店共有の保存条件には対象支店が必要です。"}
                 )
 
-        if share_scope == SearchCondition.ShareScope.ADMIN and request_staff.role not in (
-            "manager",
-            "admin",
+        if (
+            share_scope == SearchCondition.ShareScope.ADMIN
+            and request_staff.role
+            not in (
+                "manager",
+                "admin",
+            )
         ):
             raise serializers.ValidationError(
                 {
