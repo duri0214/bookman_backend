@@ -2,6 +2,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "中央図書館",
       "address": "東京都渋谷区神宮前1-4-1",
       "phone": "03-3403-2591",
@@ -12,6 +13,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "西原図書館",
       "address": "東京都渋谷区西原2-28-9",
       "phone": "03-3460-8535",
@@ -22,6 +24,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "白根図書 サービススポット",
       "address": "東京都渋谷区東4-9-1",
       "phone": "03-3486-2820",
@@ -32,6 +35,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "富ヶ谷図書館",
       "address": "東京都渋谷区上原1-46-2",
       "phone": "03-3468-9020",
@@ -42,6 +46,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "笹塚図書館",
       "address": "東京都渋谷区笹塚1-47-1　メルクマール京王笹塚4階",
       "phone": "03-3460-6784",
@@ -52,6 +57,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "本町図書館",
       "address": "東京都渋谷区本町1-33-5",
       "phone": "03-5371-4833",
@@ -62,6 +68,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "こもれび大和田図書館",
       "address": "東京都渋谷区桜丘町23-21 文化総合ｾﾝﾀｰ大和田2階",
       "phone": "03-3464-4780",
@@ -72,6 +79,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "臨川みんなの図書館",
       "address": "東京都渋谷区広尾1-9-17",
       "phone": "03-5793-9500",
@@ -82,6 +90,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "代々木図書館",
       "address": "東京都渋谷区代々木3-51-8",
       "phone": "03-3370-7566",
@@ -92,6 +101,7 @@
   {
     "model": "bookman.branch",
     "fields": {
+      "municipality": 1,
       "name": "笹塚こども図書館",
       "address": "東京都渋谷区笹塚3-3-1",
       "phone": "03-3378-1983",

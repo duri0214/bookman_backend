@@ -91,6 +91,23 @@ class LendingRepository:
             active=True,
         ).exists()
 
+    def exists_active_book_by_customer_in_municipality(
+        self,
+        *,
+        customer: Customer,
+        book: Book,
+        municipality_id: int,
+    ) -> bool:
+        """
+        指定利用者が同じ自治体内で同じ書籍を貸出中かどうかを返す。
+        """
+        return Lending.objects.filter(
+            customer=customer,
+            branch_book_stock__book=book,
+            branch_book_stock__branch__municipality_id=municipality_id,
+            active=True,
+        ).exists()
+
     def create(
         self,
         *,

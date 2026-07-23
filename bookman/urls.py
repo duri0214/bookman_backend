@@ -3,6 +3,11 @@ from . import views
 
 urlpatterns = [
     path("api-auth/", include("rest_framework.urls")),
+    path(
+        "api/municipalities/",
+        views.MunicipalityList.as_view(),
+        name="municipality_list",
+    ),
     path("api/branches/", views.BranchList.as_view(), name="branch_list"),
     path(
         "api/branch-closed-days/",

@@ -14,6 +14,7 @@ from bookman.models import (
     Customer,
     Lending,
     LibraryStaff,
+    Municipality,
     Reservation,
     SearchCondition,
 )
@@ -22,13 +23,17 @@ from bookman.models import (
 class BookmanApiTest(APITestCase):
     @classmethod
     def setUpTestData(cls):
+        cls.municipality = Municipality.objects.create(name="六戸町")
+        cls.other_municipality = Municipality.objects.create(name="七戸町")
         cls.branch = Branch.objects.create(
+            municipality=cls.municipality,
             name="中央図書館",
             address="青森県上北郡六戸町",
             phone="0176-00-0000",
             remark="本館",
         )
         cls.second_branch = Branch.objects.create(
+            municipality=cls.municipality,
             name="東図書館",
             address="青森県上北郡六戸町東",
             phone="0176-00-0001",
@@ -94,6 +99,8 @@ class BookmanApiTest(APITestCase):
             [
                 {
                     "id": self.branch.id,
+                    "municipality": self.municipality.id,
+                    "municipality_name": "六戸町",
                     "name": "中央図書館",
                     "address": "青森県上北郡六戸町",
                     "phone": "0176-00-0000",
@@ -101,6 +108,8 @@ class BookmanApiTest(APITestCase):
                 },
                 {
                     "id": self.second_branch.id,
+                    "municipality": self.municipality.id,
+                    "municipality_name": "六戸町",
                     "name": "東図書館",
                     "address": "青森県上北郡六戸町東",
                     "phone": "0176-00-0001",
@@ -127,7 +136,37 @@ class BookmanApiTest(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], "西図書館")
-        self.assertTrue(Branch.objects.filter(name="西図書館").exists())
+        self.assertEqual(response.data["municipality"], self.municipality.id)
+        self.assertTrue(
+            Branch.objects.filter(
+                municipality=self.municipality,
+                name="西図書館",
+            ).exists()
+        )
+
+    def test_branch_list_filters_by_municipality(self):
+        """
+        シナリオ:
+        - 入力: 別自治体に同名支店を含む支店データがある状態。
+        - 処理: municipality を指定して支店一覧APIへGETリクエストする。
+        - 期待値: 指定自治体に所属する支店だけが返ること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+
+        response = self.client.get(
+            f"/bookman/api/branches/?municipality={self.other_municipality.id}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], other_branch.id)
+        self.assertEqual(response.data[0]["municipality"], self.other_municipality.id)
 
     def test_legacy_branch_create_endpoint_is_removed(self):
         """
@@ -504,6 +543,44 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["total_amount"], 6)
 
+    def test_book_detail_total_amount_is_scoped_by_municipality(self):
+        """
+        シナリオ:
+        - 入力: 同じ書籍が2つの自治体の支店に所蔵されている状態。
+        - 処理: 既定自治体と別自治体を指定して書籍詳細APIへGETリクエストする。
+        - 期待値: total_amount と branch_stocks が自治体ごとに分離して返ること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=5,
+        )
+
+        default_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
+        other_response = self.client.get(
+            f"/bookman/api/books/{self.book.id}/?municipality={self.other_municipality.id}"
+        )
+
+        self.assertEqual(default_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(default_response.data["total_amount"], 2)
+        self.assertEqual(
+            [stock["id"] for stock in default_response.data["branch_stocks"]],
+            [self.branch_stock.id],
+        )
+        self.assertEqual(other_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_response.data["total_amount"], 5)
+        self.assertEqual(
+            [stock["id"] for stock in other_response.data["branch_stocks"]],
+            [other_stock.id],
+        )
+
     def test_branch_book_stock_list_returns_branch_book_amounts(self):
         """
         シナリオ:
@@ -665,6 +742,39 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.branch_stock.refresh_from_db()
         self.assertEqual(self.branch_stock.amount, 2)
+
+    def test_branch_book_stock_transfer_rejects_cross_municipality(self):
+        """
+        シナリオ:
+        - 入力: 移動元と移動先に異なる自治体の支店を指定した移動ペイロード。
+        - 処理: 支店間移動APIへPOSTリクエストする。
+        - 期待値: 400 が返り、自治体をまたぐ所蔵移動が作成されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/transfer/",
+            {
+                "book": self.book.id,
+                "from_branch": self.branch.id,
+                "to_branch": other_branch.id,
+                "amount": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.amount, 2)
+        self.assertFalse(
+            BranchBookStock.objects.filter(book=self.book, branch=other_branch).exists()
+        )
 
     def test_branch_book_stock_transfer_rejects_zero_amount(self):
         """
@@ -1032,6 +1142,54 @@ class BookmanApiTest(APITestCase):
             1,
         )
 
+    def test_lending_create_allows_same_book_in_other_municipality(self):
+        """
+        シナリオ:
+        - 入力: 利用者が既定自治体で同じ書籍を貸出中で、別自治体にも同じ書籍の所蔵がある状態。
+        - 処理: 別自治体の職員と所蔵で貸出APIへPOSTする。
+        - 期待値: 自治体が異なるため重複貸出扱いにならず貸出が作成されること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_staff = LibraryStaff.objects.create(
+            name="七戸貸出担当者",
+            branch=other_branch,
+            role="counter",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=1,
+        )
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": other_stock.id,
+                "customer": self.customer.id,
+                "contact_staff": other_staff.id,
+                "return_date": "2026-01-16",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            Lending.objects.filter(customer=self.customer, active=True).count(),
+            2,
+        )
+
     def test_lending_create_rejects_unavailable_stock_for_other_customer(self):
         """
         シナリオ:
@@ -1327,6 +1485,61 @@ class BookmanApiTest(APITestCase):
             Reservation.objects.filter(
                 branch_book_stock=self.branch_stock,
                 customer=self.customer,
+            ).exists()
+        )
+
+    def test_reservation_create_allows_same_book_lending_in_other_municipality(self):
+        """
+        シナリオ:
+        - 入力: 利用者が既定自治体で同じ本を貸出中で、別自治体の同じ本は貸出可能数0の状態。
+        - 処理: 別自治体の支店別所蔵へ予約APIをPOSTする。
+        - 期待値: 自治体が異なるため同じ本の貸出中チェックに該当せず、予約が作成されること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_staff = LibraryStaff.objects.create(
+            name="七戸貸出担当者",
+            branch=other_branch,
+            role="counter",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=1,
+        )
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+            return_date=date(2026, 1, 15),
+        )
+        Lending.objects.create(
+            branch_book_stock=other_stock,
+            customer=self.second_customer,
+            contact_staff=other_staff,
+            return_date=date(2026, 1, 15),
+        )
+
+        response = self.client.post(
+            "/bookman/api/reservations/",
+            {
+                "branch_book_stock": other_stock.id,
+                "customer": self.customer.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(
+            Reservation.objects.filter(
+                branch_book_stock=other_stock,
+                customer=self.customer,
+                status=Reservation.Status.WAITING,
             ).exists()
         )
 

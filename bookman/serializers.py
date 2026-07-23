@@ -36,6 +36,7 @@ from bookman.models import (
     Customer,
     Lending,
     LibraryStaff,
+    Municipality,
     Reservation,
     SearchCondition,
 )
@@ -53,10 +54,33 @@ class AuthorSerializer(serializers.ModelSerializer):
         fields = ["id", "name"]
 
 
+class MunicipalitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Municipality
+        fields = ["id", "name"]
+
+
 class BranchSerializer(serializers.ModelSerializer):
+    municipality = serializers.PrimaryKeyRelatedField(
+        queryset=Municipality.objects.order_by("id"),
+        required=False,
+    )
+    municipality_name = serializers.CharField(
+        source="municipality.name", read_only=True
+    )
+
     class Meta:
         model = Branch
-        fields = ["id", "name", "address", "phone", "remark"]
+        fields = [
+            "id",
+            "municipality",
+            "municipality_name",
+            "name",
+            "address",
+            "phone",
+            "remark",
+        ]
+        validators = []
 
 
 class BranchClosedDaySerializer(serializers.ModelSerializer):
@@ -285,11 +309,15 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         """
-        同一支店への移動を拒否する。
+        同一支店への移動と自治体をまたぐ移動を拒否する。
         """
         if attrs["from_branch"] == attrs["to_branch"]:
             raise serializers.ValidationError(
                 {"to_branch": "移動元と移動先には別の支店を指定してください。"}
+            )
+        if attrs["from_branch"].municipality_id != attrs["to_branch"].municipality_id:
+            raise serializers.ValidationError(
+                {"to_branch": "自治体が異なる支店へは移動できません。"}
             )
 
         return attrs
@@ -376,6 +404,17 @@ class LendingSerializer(serializers.ModelSerializer):
         """
         貸出登録の業務処理を実行する。
         """
+        stock = validated_data["branch_book_stock"]
+        contact_staff = validated_data["contact_staff"]
+        if contact_staff.branch_id is None:
+            raise serializers.ValidationError(
+                {"contact_staff": "対応者には所属支店が必要です。"}
+            )
+        if contact_staff.branch.municipality_id != stock.branch.municipality_id:
+            raise serializers.ValidationError(
+                {"contact_staff": "対象所蔵と同じ自治体の職員を指定してください。"}
+            )
+
         try:
             return LendingService().lend(**validated_data)
         except DuplicateBookLendingError as exc:
@@ -560,7 +599,7 @@ class BookSerializer(serializers.ModelSerializer):
         many=True,
         queryset=Author.objects.order_by("id"),
     )
-    branch_stocks = BookBranchStockSerializer(many=True, read_only=True)
+    branch_stocks = serializers.SerializerMethodField()
     total_amount = serializers.SerializerMethodField()
 
     class Meta:
@@ -580,10 +619,29 @@ class BookSerializer(serializers.ModelSerializer):
 
     def get_total_amount(self, obj):
         """
-        支店別所蔵数の小計を合計し、自治体全体の所蔵数として返す。
+        指定自治体内の支店別所蔵数の小計を合計して返す。
         """
         annotated_branch_amount_total = getattr(obj, "total_amount", None)
         if annotated_branch_amount_total is not None:
             return annotated_branch_amount_total
 
-        return sum(branch_stock.amount for branch_stock in obj.branch_stocks.all())
+        municipality = self.context.get("municipality")
+        branch_stocks = obj.branch_stocks.all()
+        if municipality is not None:
+            branch_stocks = branch_stocks.filter(branch__municipality=municipality)
+
+        return sum(branch_stock.amount for branch_stock in branch_stocks)
+
+    def get_branch_stocks(self, obj):
+        """
+        指定自治体内の支店別所蔵数だけを返す。
+        """
+        municipality = self.context.get("municipality")
+        branch_stocks = obj.branch_stocks.select_related("branch").order_by(
+            "branch_id",
+            "id",
+        )
+        if municipality is not None:
+            branch_stocks = branch_stocks.filter(branch__municipality=municipality)
+
+        return BookBranchStockSerializer(branch_stocks, many=True).data

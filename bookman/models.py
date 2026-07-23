@@ -1,10 +1,31 @@
 from django.db import models
 
 
+class Municipality(models.Model):
+    """
+    自治体マスタ。
+
+    Attributes:
+        name: 自治体名。
+        created_at: 登録日。
+        updated_at: 更新日。
+    """
+
+    name = models.CharField("自治体名", max_length=255, unique=True)
+    created_at = models.DateField("登録日", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    class Meta:
+        db_table = "bookman_m_municipality"
+
+    def __str__(self):
+        return str(self.name)
+
+
 class Book(models.Model):
     """
     書籍マスタ
-    システムを使用するひとつの自治体が束ねる、n個の支店図書館すべてが所蔵する本。
+    システムを使用する自治体が束ねる、n個の支店図書館すべてが所蔵する本。
     書籍自体は数量を持たず、支店別所蔵数は BranchBookStock.amount が持つ。
     """
 
@@ -33,7 +54,7 @@ class Book(models.Model):
 class BranchBookStock(models.Model):
     """
     支店と書籍の多対多関係に、支店別の所蔵数を持たせる中間テーブル。
-    amount は支店別の小計で、自治体全体の所蔵数は同じ書籍に紐づく amount の合計として扱う。
+    amount は支店別の小計で、自治体全体の所蔵数は同じ自治体の支店に紐づく amount の合計として扱う。
     """
 
     branch = models.ForeignKey(
@@ -295,10 +316,25 @@ class Customer(models.Model):
 
 class Branch(models.Model):
     """
-    図書館支店マスタ
+    自治体に所属する図書館支店マスタ。
+
+    Attributes:
+        municipality: 支店を運営する自治体。
+        name: 支店名。
+        address: 所在地。
+        phone: 電話番号。
+        remark: 補足情報。
+        created_at: 登録日。
+        updated_at: 更新日。
     """
 
-    name = models.CharField(max_length=255, unique=True)
+    municipality = models.ForeignKey(
+        "Municipality",
+        related_name="branches",
+        on_delete=models.PROTECT,
+        verbose_name="自治体",
+    )
+    name = models.CharField(max_length=255)
     address = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
     remark = models.CharField(max_length=255)
@@ -307,6 +343,12 @@ class Branch(models.Model):
 
     class Meta:
         db_table = "bookman_m_branch"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["municipality", "name"],
+                name="bookman_branch_unique_municipality_name",
+            )
+        ]
 
     def __str__(self):
         return str(self.name)

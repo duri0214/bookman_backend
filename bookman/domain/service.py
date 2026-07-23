@@ -38,6 +38,12 @@ class InsufficientStockError(BranchBookStockTransferError):
     """
 
 
+class CrossMunicipalityTransferError(BranchBookStockTransferError):
+    """
+    自治体が異なる支店間で移動しようとした場合の例外。
+    """
+
+
 class LendingRuleError(Exception):
     """
     貸出・返却が業務ルール上実行できない場合の例外。
@@ -129,6 +135,9 @@ class BranchBookStockTransferService:
         """
         移動元の所蔵数を減らし、移動先の所蔵数を増やす。
         """
+        if from_branch.municipality_id != to_branch.municipality_id:
+            raise CrossMunicipalityTransferError
+
         with transaction.atomic():
             source_stock = self.repository.get_for_update(book, from_branch)
             if source_stock is None:
@@ -199,9 +208,11 @@ class LendingService:
             if stock is None:
                 raise LendingStockUnavailableError
 
-            if self.lending_repository.exists_active_book_by_customer(
+            municipality_id = stock.branch.municipality_id
+            if self.lending_repository.exists_active_book_by_customer_in_municipality(
                 customer=customer,
                 book=stock.book,
+                municipality_id=municipality_id,
             ):
                 raise DuplicateBookLendingError
 
@@ -337,9 +348,11 @@ class ReservationService:
             ):
                 raise DuplicateReservationError
 
-            if self.lending_repository.exists_active_book_by_customer(
+            municipality_id = stock.branch.municipality_id
+            if self.lending_repository.exists_active_book_by_customer_in_municipality(
                 customer=customer,
                 book=stock.book,
+                municipality_id=municipality_id,
             ):
                 raise DuplicateBookReservationError
 
