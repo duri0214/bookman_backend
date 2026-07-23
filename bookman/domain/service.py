@@ -1,7 +1,10 @@
+from datetime import date, timedelta
+
 from django.db import transaction
 
 from bookman.domain.repository import (
     BranchBookStockRepository,
+    BranchClosedDayRepository,
     LendingRepository,
     ReservationRepository,
 )
@@ -166,10 +169,14 @@ class LendingService:
     def __init__(
         self,
         stock_repository: BranchBookStockRepository | None = None,
+        closed_day_repository: BranchClosedDayRepository | None = None,
         lending_repository: LendingRepository | None = None,
         reservation_repository: ReservationRepository | None = None,
     ):
         self.stock_repository = stock_repository or BranchBookStockRepository()
+        self.closed_day_repository = (
+            closed_day_repository or BranchClosedDayRepository()
+        )
         self.lending_repository = lending_repository or LendingRepository()
         self.reservation_repository = reservation_repository or ReservationRepository()
 
@@ -217,11 +224,17 @@ class LendingService:
             if active_customer_count >= customer.max_lending_count:
                 raise CustomerLendingLimitExceededError
 
+            adjusted_return_date, adjustment_reason = self._adjust_return_date(
+                branch=stock.branch,
+                return_date=return_date,
+            )
             lending = self.lending_repository.create(
                 stock=stock,
                 customer=customer,
                 contact_staff=contact_staff,
-                return_date=return_date,
+                return_date=adjusted_return_date,
+                original_return_date=return_date,
+                return_date_adjustment_reason=adjustment_reason,
             )
             if held_reservation is not None:
                 self.reservation_repository.save_status(
@@ -230,6 +243,29 @@ class LendingService:
                 )
 
             return lending
+
+    def _adjust_return_date(
+        self, *, branch: Branch, return_date: date
+    ) -> tuple[date, str]:
+        """
+        返却予定日が支店休館日に当たる場合、次の開館日へ繰り延べる。
+        """
+        adjusted_date = return_date
+        closed_reasons = []
+
+        while True:
+            closed_day = self.closed_day_repository.get_by_branch_and_date(
+                branch=branch,
+                closed_date=adjusted_date,
+            )
+            if closed_day is None:
+                break
+
+            if closed_day.reason:
+                closed_reasons.append(closed_day.reason)
+            adjusted_date += timedelta(days=1)
+
+        return adjusted_date, "、".join(closed_reasons)
 
     def return_lending(self, *, lending_id: int) -> LendingReturn:
         """

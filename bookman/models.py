@@ -94,6 +94,8 @@ class Lending(models.Model):
 
     Attributes:
         return_date: 返却予定日。
+        original_return_date: 休館日補正前の返却予定日。
+        return_date_adjustment_reason: 返却予定日を補正した理由。
         branch_book_stock: 貸出対象の支店別所蔵。
         active: 返却前の貸出であるかどうか。
         customer: 貸出を受ける利用者。
@@ -103,6 +105,16 @@ class Lending(models.Model):
     """
 
     return_date = models.DateField("返却予定日")
+    original_return_date = models.DateField(
+        "補正前返却予定日",
+        null=True,
+        blank=True,
+    )
+    return_date_adjustment_reason = models.CharField(
+        "返却予定日補正理由",
+        max_length=255,
+        blank=True,
+    )
     branch_book_stock = models.ForeignKey(
         "BranchBookStock",
         related_name="lendings",
@@ -229,6 +241,41 @@ class Branch(models.Model):
 
     def __str__(self):
         return str(self.name)
+
+
+class BranchClosedDay(models.Model):
+    """
+    支店ごとの日付単位の休館日。
+
+    Attributes:
+        branch: 休館日を設定する支店。
+        date: 休館日。
+        reason: 休館理由。祝日、年末年始、蔵書点検など職員が任意で入力する。
+        created_at: 登録日。
+        updated_at: 更新日。
+    """
+
+    branch = models.ForeignKey(
+        "Branch",
+        related_name="closed_days",
+        on_delete=models.CASCADE,
+        verbose_name="支店",
+    )
+    date = models.DateField("休館日")
+    reason = models.CharField("休館理由", max_length=255, blank=True)
+    created_at = models.DateField("登録日", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "date"], name="bookman_branch_closed_day_unique"
+            )
+        ]
+
+    def __str__(self):
+        branch_name = str(self.branch.name)
+        return f"{branch_name}: {self.date}"
 
 
 class Category(models.Model):

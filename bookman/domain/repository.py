@@ -6,6 +6,7 @@ from bookman.models import (
     Book,
     Branch,
     BranchBookStock,
+    BranchClosedDay,
     Customer,
     Lending,
     LibraryStaff,
@@ -97,6 +98,8 @@ class LendingRepository:
         customer: Customer,
         contact_staff: LibraryStaff,
         return_date,
+        original_return_date,
+        return_date_adjustment_reason: str,
     ) -> Lending:
         """
         貸出情報を作成する。
@@ -106,6 +109,8 @@ class LendingRepository:
             customer=customer,
             contact_staff=contact_staff,
             return_date=return_date,
+            original_return_date=original_return_date,
+            return_date_adjustment_reason=return_date_adjustment_reason,
         )
 
     def get_for_update(self, lending_id: int) -> Lending | None:
@@ -123,6 +128,26 @@ class LendingRepository:
         """
         lending.updated_at = timezone.localdate()
         Lending.objects.bulk_update([lending], ["active", "updated_at"])
+
+
+class BranchClosedDayRepository:
+    """
+    支店休館日の永続化操作。
+    """
+
+    def get_by_branch_and_date(
+        self,
+        *,
+        branch: Branch,
+        closed_date,
+    ) -> BranchClosedDay | None:
+        """
+        指定支店の指定日が休館日として登録されていれば返す。
+        """
+        try:
+            return BranchClosedDay.objects.get(branch=branch, date=closed_date)
+        except BranchClosedDay.DoesNotExist:
+            return None
 
 
 class ReservationRepository:
