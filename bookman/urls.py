@@ -17,6 +17,21 @@ urlpatterns = [
     ),
     path("api/customers/", views.CustomerList.as_view(), name="customer_list"),
     path("api/staff/", views.LibraryStaffList.as_view(), name="library_staff_list"),
+    path(
+        "api/search-conditions/",
+        views.SearchConditionList.as_view(),
+        name="search_condition_list",
+    ),
+    path(
+        "api/search-conditions/<int:pk>/",
+        views.SearchConditionDetail.as_view(),
+        name="search_condition_detail",
+    ),
+    path(
+        "api/search-conditions/permissions/",
+        views.SearchConditionPermissionContext.as_view(),
+        name="search_condition_permission_context",
+    ),
     path("api/books/", views.BookList.as_view(), name="book_list"),
     path("api/books/create/", views.BookCreate.as_view(), name="book_create"),
     path("api/books/<int:pk>/", views.BookDetail.as_view(), name="book_detail"),

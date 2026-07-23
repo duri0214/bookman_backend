@@ -1,6 +1,8 @@
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from .exceptions import BusinessRuleApiError
@@ -15,6 +17,7 @@ from .models import (
     Lending,
     LibraryStaff,
     Reservation,
+    SearchCondition,
 )
 from .serializers import (
     AuthorSerializer,
@@ -31,6 +34,8 @@ from .serializers import (
     ReservationCancelSerializer,
     ReservationExpireSerializer,
     ReservationSerializer,
+    SearchConditionSerializer,
+    can_manage_search_condition,
 )
 
 
@@ -80,6 +85,139 @@ class LibraryStaffList(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return LibraryStaff.objects.select_related("branch").order_by("id")
+
+
+class SearchConditionAccessMixin:
+    """
+    リクエスト職員を起点に保存済み検索条件の参照・操作範囲を決める mixin。
+    """
+
+    def get_staff(self):
+        """
+        query parameter または request body の staff ID から職員を取得する。
+        """
+        staff_id = self.request.query_params.get("staff") or self.request.data.get(
+            "staff"
+        )
+        if staff_id is None:
+            return None
+
+        return LibraryStaff.objects.select_related("branch").filter(id=staff_id).first()
+
+    def get_serializer_context(self):
+        """
+        serializer に操作可否判定用の職員コンテキストを渡す。
+        """
+        context = super().get_serializer_context()
+        context["staff"] = self.get_staff()
+        return context
+
+    def get_visible_queryset(self):
+        """
+        職員ロールで参照可能な保存済み検索条件だけを返す。
+        """
+        staff = self.get_staff()
+        queryset = SearchCondition.objects.select_related(
+            "created_by",
+            "branch",
+        ).order_by("target_screen", "name", "id")
+
+        target_screen = self.request.query_params.get("target_screen")
+        if target_screen:
+            queryset = queryset.filter(target_screen=target_screen)
+
+        if staff is None:
+            return queryset.none()
+
+        if staff.role in ["manager", "admin"]:
+            return queryset
+
+        return queryset.filter(
+            Q(created_by=staff)
+            | Q(
+                share_scope=SearchCondition.ShareScope.BRANCH,
+                branch=staff.branch,
+            )
+            | Q(share_scope=SearchCondition.ShareScope.ADMIN)
+        )
+
+
+class SearchConditionList(SearchConditionAccessMixin, generics.ListCreateAPIView):
+    serializer_class = SearchConditionSerializer
+
+    def get_queryset(self):
+        return self.get_visible_queryset()
+
+
+class SearchConditionDetail(
+    SearchConditionAccessMixin,
+    generics.RetrieveUpdateDestroyAPIView,
+):
+    serializer_class = SearchConditionSerializer
+
+    def get_queryset(self):
+        return self.get_visible_queryset()
+
+    def perform_update(self, serializer):
+        staff = self.get_staff()
+        if not can_manage_search_condition(staff, self.get_object()):
+            raise PermissionDenied("この保存条件を更新する権限がありません。")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        staff = self.get_staff()
+        if not can_manage_search_condition(staff, instance):
+            raise PermissionDenied("この保存条件を削除する権限がありません。")
+        instance.delete()
+
+
+class SearchConditionPermissionContext(APIView):
+    """
+    管理側画面が disabled 表示に使う職員別の操作可否情報を返す。
+    """
+
+    def get(self, request):
+        staff_id = request.query_params.get("staff")
+        staff = (
+            LibraryStaff.objects.select_related("branch").filter(id=staff_id).first()
+        )
+        if staff is None:
+            return Response(
+                {
+                    "staff": None,
+                    "role": "",
+                    "branch": None,
+                    "can_create_personal": False,
+                    "can_create_branch": False,
+                    "can_create_admin": False,
+                    "record_scope": "none",
+                    "disabled_reason": "職員を指定してください。",
+                }
+            )
+
+        is_manager = staff.role in ["manager", "admin"]
+        branch = None
+        if staff.branch is not None:
+            branch = {"id": staff.branch.id, "name": staff.branch.name}
+
+        disabled_reason = ""
+        if not is_manager:
+            disabled_reason = (
+                "支店共有と管理者共有の作成には manager または admin 権限が必要です。"
+            )
+
+        return Response(
+            {
+                "staff": staff.id,
+                "role": staff.role,
+                "branch": branch,
+                "can_create_personal": True,
+                "can_create_branch": is_manager,
+                "can_create_admin": is_manager,
+                "record_scope": "all" if is_manager else "own_branch",
+                "disabled_reason": disabled_reason,
+            }
+        )
 
 
 class AuthorList(generics.ListAPIView):
