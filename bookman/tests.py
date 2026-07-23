@@ -9,6 +9,7 @@ from bookman.models import (
     Book,
     Branch,
     BranchBookStock,
+    BranchClosedDay,
     Category,
     Customer,
     Lending,
@@ -126,6 +127,38 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], "西図書館")
         self.assertTrue(Branch.objects.filter(name="西図書館").exists())
+
+    def test_branch_closed_day_create_list_and_delete(self):
+        """
+        シナリオ:
+        - 入力: 支店ID、休館日、理由を含む休館日登録ペイロード。
+        - 処理: 休館日APIへPOSTし、支店で絞り込んだ一覧GET後にDELETEする。
+        - 期待値: 休館日が登録・一覧表示され、削除後は対象支店の休館日が残らないこと。
+        """
+        payload = {
+            "branch": self.branch.id,
+            "date": "2026-01-15",
+            "reason": "蔵書点検",
+        }
+
+        response = self.client.post(
+            "/bookman/api/branch-closed-days/",
+            payload,
+            format="json",
+        )
+        list_response = self.client.get(
+            f"/bookman/api/branch-closed-days/?branch={self.branch.id}"
+        )
+        delete_response = self.client.delete(
+            f"/bookman/api/branch-closed-days/{response.data['id']}/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["branch_name"], "中央図書館")
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data[0]["reason"], "蔵書点検")
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(BranchClosedDay.objects.filter(branch=self.branch).exists())
 
     def test_book_list_returns_branch_stock_total_amount(self):
         """
@@ -542,6 +575,10 @@ class BookmanApiTest(APITestCase):
         self.assertTrue(response.data["active"])
         self.assertEqual(response.data["customer_name"], "山田太郎")
         self.assertEqual(response.data["contact_staff_name"], "貸出担当者")
+        self.assertEqual(response.data["return_date"], "2026-01-15")
+        self.assertEqual(response.data["original_return_date"], "2026-01-15")
+        self.assertFalse(response.data["return_date_adjusted"])
+        self.assertEqual(response.data["return_date_adjustment_reason"], "")
         self.assertTrue(
             Lending.objects.filter(
                 branch_book_stock=self.branch_stock,
@@ -549,6 +586,74 @@ class BookmanApiTest(APITestCase):
                 active=True,
             ).exists()
         )
+
+    def test_lending_create_adjusts_return_date_for_branch_closed_days(self):
+        """
+        シナリオ:
+        - 入力: 返却予定日から2日連続で同じ支店の休館日が登録されている状態。
+        - 処理: 休館日に当たる返却予定日で貸出APIへPOSTする。
+        - 期待値: 返却予定日が次の開館日へ繰り延べられ、補正前日付と休館理由が返ること。
+        """
+        BranchClosedDay.objects.create(
+            branch=self.branch,
+            date=date(2026, 1, 15),
+            reason="祝日",
+        )
+        BranchClosedDay.objects.create(
+            branch=self.branch,
+            date=date(2026, 1, 16),
+            reason="蔵書点検",
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+                "contact_staff": self.contact_staff.id,
+                "return_date": "2026-01-15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["return_date"], "2026-01-17")
+        self.assertEqual(response.data["original_return_date"], "2026-01-15")
+        self.assertTrue(response.data["return_date_adjusted"])
+        self.assertEqual(
+            response.data["return_date_adjustment_reason"],
+            "祝日、蔵書点検",
+        )
+        lending = Lending.objects.get(id=response.data["id"])
+        self.assertEqual(lending.return_date, date(2026, 1, 17))
+
+    def test_lending_create_ignores_other_branch_closed_day(self):
+        """
+        シナリオ:
+        - 入力: 別支店だけに休館日が登録されている状態。
+        - 処理: 通常営業日の対象支店で貸出APIへPOSTする。
+        - 期待値: 返却予定日は補正されず、補正フラグが False で返ること。
+        """
+        BranchClosedDay.objects.create(
+            branch=self.second_branch,
+            date=date(2026, 1, 15),
+            reason="臨時休館",
+        )
+
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+                "contact_staff": self.contact_staff.id,
+                "return_date": "2026-01-15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["return_date"], "2026-01-15")
+        self.assertFalse(response.data["return_date_adjusted"])
 
     def test_lending_create_rejects_duplicate_book_for_same_customer(self):
         """

@@ -9,6 +9,7 @@ from .models import (
     Book,
     Branch,
     BranchBookStock,
+    BranchClosedDay,
     Category,
     Customer,
     Lending,
@@ -19,6 +20,7 @@ from .serializers import (
     AuthorSerializer,
     BranchBookStockTransferSerializer,
     BranchBookStockSerializer,
+    BranchClosedDaySerializer,
     BookSerializer,
     BranchSerializer,
     CategorySerializer,
@@ -41,6 +43,29 @@ class BranchList(generics.ListCreateAPIView):
 
 class BranchCreate(generics.CreateAPIView):
     serializer_class = BranchSerializer
+
+
+class BranchClosedDayList(generics.ListCreateAPIView):
+    serializer_class = BranchClosedDaySerializer
+
+    def get_queryset(self):
+        queryset = BranchClosedDay.objects.select_related("branch").order_by(
+            "branch_id",
+            "date",
+            "id",
+        )
+        branch_id = self.request.query_params.get("branch")
+        if branch_id is not None:
+            queryset = queryset.filter(branch_id=branch_id)
+
+        return queryset
+
+
+class BranchClosedDayDetail(generics.DestroyAPIView):
+    serializer_class = BranchClosedDaySerializer
+
+    def get_queryset(self):
+        return BranchClosedDay.objects.select_related("branch")
 
 
 class CustomerList(generics.ListCreateAPIView):

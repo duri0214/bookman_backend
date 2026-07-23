@@ -31,6 +31,7 @@ from bookman.models import (
     Book,
     Branch,
     BranchBookStock,
+    BranchClosedDay,
     Category,
     Customer,
     Lending,
@@ -55,6 +56,20 @@ class BranchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Branch
         fields = ["id", "name", "address", "phone", "remark"]
+
+
+class BranchClosedDaySerializer(serializers.ModelSerializer):
+    """
+    支店休館日APIの入出力。
+
+    支店と日付単位で休館日を登録し、理由を任意で保持する。
+    """
+
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+
+    class Meta:
+        model = BranchClosedDay
+        fields = ["id", "branch", "branch_name", "date", "reason"]
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -196,6 +211,7 @@ class LendingSerializer(serializers.ModelSerializer):
     contact_staff_name = serializers.CharField(
         source="contact_staff.name", read_only=True
     )
+    return_date_adjusted = serializers.SerializerMethodField()
 
     class Meta:
         model = Lending
@@ -209,9 +225,26 @@ class LendingSerializer(serializers.ModelSerializer):
             "contact_staff",
             "contact_staff_name",
             "return_date",
+            "original_return_date",
+            "return_date_adjusted",
+            "return_date_adjustment_reason",
             "active",
         ]
-        read_only_fields = ["active"]
+        read_only_fields = [
+            "active",
+            "original_return_date",
+            "return_date_adjusted",
+            "return_date_adjustment_reason",
+        ]
+
+    def get_return_date_adjusted(self, obj):
+        """
+        返却予定日が休館日により補正されたかどうかを返す。
+        """
+        return (
+            obj.original_return_date is not None
+            and obj.original_return_date != obj.return_date
+        )
 
     def create(self, validated_data):
         """

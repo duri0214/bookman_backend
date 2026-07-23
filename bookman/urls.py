@@ -5,6 +5,16 @@ urlpatterns = [
     path("api-auth/", include("rest_framework.urls")),
     path("api/branches/", views.BranchList.as_view(), name="branch_list"),
     path("api/branches/create/", views.BranchCreate.as_view(), name="branch_create"),
+    path(
+        "api/branch-closed-days/",
+        views.BranchClosedDayList.as_view(),
+        name="branch_closed_day_list",
+    ),
+    path(
+        "api/branch-closed-days/<int:pk>/",
+        views.BranchClosedDayDetail.as_view(),
+        name="branch_closed_day_detail",
+    ),
     path("api/customers/", views.CustomerList.as_view(), name="customer_list"),
     path("api/staff/", views.LibraryStaffList.as_view(), name="library_staff_list"),
     path("api/books/", views.BookList.as_view(), name="book_list"),
