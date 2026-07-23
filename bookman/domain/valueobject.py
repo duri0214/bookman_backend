@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from bookman.models import Book, Branch, BranchBookStock, Lending
+from bookman.models import Book, Branch, BranchBookStock, Lending, Reservation
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,8 @@ class LendingReturn:
 
     Attributes:
         lending: 返却済みに更新された貸出情報。
+        held_reservation: 返却後に取り置きへ進んだ予約。該当予約がない場合は None。
     """
 
     lending: Lending
+    held_reservation: Reservation | None = None

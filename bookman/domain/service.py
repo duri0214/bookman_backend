@@ -1,6 +1,10 @@
 from django.db import transaction
 
-from bookman.domain.repository import BranchBookStockRepository, LendingRepository
+from bookman.domain.repository import (
+    BranchBookStockRepository,
+    LendingRepository,
+    ReservationRepository,
+)
 from bookman.domain.valueobject import BranchBookStockTransfer, LendingReturn
 from bookman.models import (
     Book,
@@ -9,6 +13,7 @@ from bookman.models import (
     Customer,
     Lending,
     LibraryStaff,
+    Reservation,
 )
 
 
@@ -63,6 +68,42 @@ class LendingNotFoundError(LendingRuleError):
 class LendingAlreadyReturnedError(LendingRuleError):
     """
     返却対象の貸出情報がすでに返却済みの場合の例外。
+    """
+
+
+class ReservationRuleError(Exception):
+    """
+    予約が業務ルール上実行できない場合の例外。
+    """
+
+
+class ReservationStockAvailableError(ReservationRuleError):
+    """
+    予約対象の支店別所蔵に貸出可能冊数が残っている場合の例外。
+    """
+
+
+class DuplicateReservationError(ReservationRuleError):
+    """
+    同じ利用者が同じ支店別所蔵へ未完了の予約を持つ場合の例外。
+    """
+
+
+class DuplicateBookReservationError(ReservationRuleError):
+    """
+    同じ利用者が同じ書籍を貸出中の場合の予約例外。
+    """
+
+
+class ReservationNotFoundError(ReservationRuleError):
+    """
+    取消対象の予約情報が存在しない場合の例外。
+    """
+
+
+class ReservationNotCancelableError(ReservationRuleError):
+    """
+    取消対象の予約が取り消し可能な状態ではない場合の例外。
     """
 
 
@@ -126,9 +167,11 @@ class LendingService:
         self,
         stock_repository: BranchBookStockRepository | None = None,
         lending_repository: LendingRepository | None = None,
+        reservation_repository: ReservationRepository | None = None,
     ):
         self.stock_repository = stock_repository or BranchBookStockRepository()
         self.lending_repository = lending_repository or LendingRepository()
+        self.reservation_repository = reservation_repository or ReservationRepository()
 
     def lend(
         self,
@@ -155,8 +198,17 @@ class LendingService:
             ):
                 raise DuplicateBookLendingError
 
+            held_reservation = (
+                self.reservation_repository.get_held_by_customer_for_update(
+                    stock=stock,
+                    customer=customer,
+                )
+            )
             active_stock_count = self.lending_repository.count_active_by_stock(stock)
-            if active_stock_count >= stock.amount:
+            held_stock_count = self.reservation_repository.count_held_by_stock(stock)
+            if active_stock_count + held_stock_count >= stock.amount and (
+                held_reservation is None
+            ):
                 raise LendingStockUnavailableError
 
             active_customer_count = self.lending_repository.count_active_by_customer(
@@ -165,12 +217,19 @@ class LendingService:
             if active_customer_count >= customer.max_lending_count:
                 raise CustomerLendingLimitExceededError
 
-            return self.lending_repository.create(
+            lending = self.lending_repository.create(
                 stock=stock,
                 customer=customer,
                 contact_staff=contact_staff,
                 return_date=return_date,
             )
+            if held_reservation is not None:
+                self.reservation_repository.save_status(
+                    held_reservation,
+                    Reservation.Status.FULFILLED,
+                )
+
+            return lending
 
     def return_lending(self, *, lending_id: int) -> LendingReturn:
         """
@@ -186,5 +245,131 @@ class LendingService:
 
             lending.active = False
             self.lending_repository.save(lending)
+            held_reservation = self._hold_next_waiting(lending.branch_book_stock)
 
-        return LendingReturn(lending=lending)
+        return LendingReturn(lending=lending, held_reservation=held_reservation)
+
+    def _hold_next_waiting(self, stock: BranchBookStock) -> Reservation | None:
+        """
+        指定支店別所蔵の次の予約待ちを取り置きへ進める。
+        """
+        next_reservation = self.reservation_repository.get_next_waiting_for_update(
+            stock
+        )
+        if next_reservation is None:
+            return None
+
+        self.reservation_repository.hold(next_reservation)
+        return next_reservation
+
+
+class ReservationService:
+    """
+    予約登録、取消、取り置き期限切れを扱う業務処理。
+    """
+
+    def __init__(
+        self,
+        stock_repository: BranchBookStockRepository | None = None,
+        lending_repository: LendingRepository | None = None,
+        reservation_repository: ReservationRepository | None = None,
+    ):
+        self.stock_repository = stock_repository or BranchBookStockRepository()
+        self.lending_repository = lending_repository or LendingRepository()
+        self.reservation_repository = reservation_repository or ReservationRepository()
+
+    def reserve(
+        self,
+        *,
+        branch_book_stock: BranchBookStock,
+        customer: Customer,
+    ) -> Reservation:
+        """
+        貸出可能冊数がない支店別所蔵へ予約待ちを登録する。
+        """
+        with transaction.atomic():
+            stock = self.stock_repository.get_for_update(
+                branch_book_stock.book,
+                branch_book_stock.branch,
+            )
+            if stock is None:
+                raise LendingStockUnavailableError
+
+            if self.reservation_repository.exists_open_by_customer_and_stock(
+                stock=stock,
+                customer=customer,
+            ):
+                raise DuplicateReservationError
+
+            if self.lending_repository.exists_active_book_by_customer(
+                customer=customer,
+                book=stock.book,
+            ):
+                raise DuplicateBookReservationError
+
+            active_stock_count = self.lending_repository.count_active_by_stock(stock)
+            held_stock_count = self.reservation_repository.count_held_by_stock(stock)
+            if active_stock_count + held_stock_count < stock.amount:
+                raise ReservationStockAvailableError
+
+            return self.reservation_repository.create_waiting(
+                stock=stock,
+                customer=customer,
+            )
+
+    def cancel(self, *, reservation_id: int) -> Reservation:
+        """
+        予約待ちまたは取り置き中の予約を取り消す。
+        """
+        with transaction.atomic():
+            reservation = self.reservation_repository.get_for_update(reservation_id)
+            if reservation is None:
+                raise ReservationNotFoundError
+
+            if reservation.status not in self.reservation_repository.open_statuses:
+                raise ReservationNotCancelableError
+
+            was_held = reservation.status == Reservation.Status.HELD
+            self.reservation_repository.save_status(
+                reservation,
+                Reservation.Status.CANCELED,
+            )
+            if was_held:
+                self._hold_next_waiting(reservation.branch_book_stock)
+
+        return reservation
+
+    def expire_due_holds(self) -> list[Reservation]:
+        """
+        期限切れの取り置きを expired にし、同じ支店別所蔵の次の予約を取り置きへ進める。
+        """
+        expired_reservations = []
+        stocks_to_promote = []
+
+        with transaction.atomic():
+            due_holds = self.reservation_repository.list_due_holds_for_update()
+            for reservation in due_holds:
+                self.reservation_repository.save_status(
+                    reservation,
+                    Reservation.Status.EXPIRED,
+                )
+                expired_reservations.append(reservation)
+                stocks_to_promote.append(reservation.branch_book_stock)
+
+            for stock in stocks_to_promote:
+                self._hold_next_waiting(stock)
+
+        return expired_reservations
+
+    def _hold_next_waiting(self, stock: BranchBookStock) -> Reservation | None:
+        """
+        指定支店別所蔵の次の予約待ちを取り置きへ進める。
+        """
+        next_reservation = self.reservation_repository.get_next_waiting_for_update(
+            stock
+        )
+        if next_reservation is None:
+            return None
+
+        self.reservation_repository.hold(next_reservation)
+        return next_reservation

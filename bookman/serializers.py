@@ -12,11 +12,17 @@ from bookman.domain.service import (
     BranchBookStockTransferService,
     CustomerLendingLimitExceededError,
     DuplicateBookLendingError,
+    DuplicateBookReservationError,
+    DuplicateReservationError,
     InsufficientStockError,
     LendingAlreadyReturnedError,
     LendingNotFoundError,
     LendingService,
     LendingStockUnavailableError,
+    ReservationNotCancelableError,
+    ReservationNotFoundError,
+    ReservationService,
+    ReservationStockAvailableError,
     SourceStockNotFoundError,
 )
 
@@ -29,6 +35,7 @@ from bookman.models import (
     Customer,
     Lending,
     LibraryStaff,
+    Reservation,
 )
 
 
@@ -102,13 +109,19 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
 
     def get_available_amount(self, obj):
         """
-        支店別所蔵数から貸出中の冊数を差し引いた貸出可能冊数を返す。
+        支店別所蔵数から貸出中と取り置き中の冊数を差し引いた貸出可能冊数を返す。
         """
         active_lending_count = getattr(obj, "active_lending_count", None)
         if active_lending_count is None:
             active_lending_count = obj.lendings.filter(active=True).count()
 
-        return max(obj.amount - active_lending_count, 0)
+        held_reservation_count = getattr(obj, "held_reservation_count", None)
+        if held_reservation_count is None:
+            held_reservation_count = obj.reservations.filter(
+                status=Reservation.Status.HELD
+            ).count()
+
+        return max(obj.amount - active_lending_count - held_reservation_count, 0)
 
 
 class BranchBookStockTransferSerializer(serializers.Serializer):
@@ -223,6 +236,121 @@ class LendingSerializer(serializers.ModelSerializer):
             ) from exc
 
 
+class ReservationSerializer(serializers.ModelSerializer):
+    """
+    予約APIの入出力。
+
+    入力では支店別所蔵と利用者を受け取り、レスポンスでは予約状態と画面表示用名称も返す。
+    """
+
+    branch_book_stock = serializers.PrimaryKeyRelatedField(
+        queryset=BranchBookStock.objects.order_by("id")
+    )
+    customer = serializers.PrimaryKeyRelatedField(
+        queryset=Customer.objects.order_by("id")
+    )
+    book_name = serializers.CharField(
+        source="branch_book_stock.book.name", read_only=True
+    )
+    branch_name = serializers.CharField(
+        source="branch_book_stock.branch.name", read_only=True
+    )
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+
+    class Meta:
+        model = Reservation
+        fields = [
+            "id",
+            "branch_book_stock",
+            "book_name",
+            "branch_name",
+            "customer",
+            "customer_name",
+            "status",
+            "hold_expires_on",
+            "created_at",
+        ]
+        read_only_fields = ["status", "hold_expires_on", "created_at"]
+
+    def create(self, validated_data):
+        """
+        予約登録の業務処理を実行する。
+        """
+        try:
+            return ReservationService().reserve(**validated_data)
+        except ReservationStockAvailableError as exc:
+            raise BusinessRuleApiError(
+                code="reservation_stock_available",
+                message="対象の本は貸出可能冊数が残っているため予約できません。",
+            ) from exc
+        except DuplicateReservationError as exc:
+            raise BusinessRuleApiError(
+                code="duplicate_reservation",
+                message="同じ利用者は同じ支店別所蔵へ重複して予約できません。",
+            ) from exc
+        except DuplicateBookReservationError as exc:
+            raise BusinessRuleApiError(
+                code="duplicate_book_reservation",
+                message="同じ本を貸出中の利用者は予約できません。",
+            ) from exc
+
+
+class ReservationCancelSerializer(serializers.Serializer):
+    """
+    予約取消APIの入出力。
+
+    URLで指定された予約IDを取り消し、取消後の予約情報を返す。
+    """
+
+    canceled_reservation = ReservationSerializer(read_only=True)
+
+    def create(self, validated_data):
+        """
+        予約取消の業務処理を実行する。
+        """
+        try:
+            return ReservationService().cancel(
+                reservation_id=self.context["reservation_id"]
+            )
+        except ReservationNotFoundError as exc:
+            raise BusinessRuleApiError(
+                code="reservation_not_found",
+                message="取消対象の予約情報が見つかりません。",
+            ) from exc
+        except ReservationNotCancelableError as exc:
+            raise BusinessRuleApiError(
+                code="reservation_not_cancelable",
+                message="取消対象の予約は取り消しできない状態です。",
+            ) from exc
+
+    def to_representation(self, instance):
+        """
+        取消後の予約情報を canceled_reservation として返す。
+        """
+        return {"canceled_reservation": ReservationSerializer(instance).data}
+
+
+class ReservationExpireSerializer(serializers.Serializer):
+    """
+    取り置き期限切れ処理APIの入出力。
+
+    期限切れになった取り置きを expired へ更新し、更新件数と対象予約を返す。
+    """
+
+    expired_count = serializers.IntegerField(read_only=True)
+    expired_reservations = ReservationSerializer(read_only=True, many=True)
+
+    def create(self, validated_data):
+        """
+        取り置き期限切れ処理を実行する。
+        """
+        expired_reservations = ReservationService().expire_due_holds()
+        return {
+            "expired_count": len(expired_reservations),
+            "expired_reservations": expired_reservations,
+        }
+
+
 class LendingReturnSerializer(serializers.Serializer):
     """
     返却APIの入出力。
@@ -232,6 +360,7 @@ class LendingReturnSerializer(serializers.Serializer):
 
     lending = serializers.IntegerField(write_only=True, min_value=1)
     returned_lending = LendingSerializer(read_only=True)
+    held_reservation = ReservationSerializer(read_only=True)
 
     def create(self, validated_data):
         """
@@ -252,9 +381,16 @@ class LendingReturnSerializer(serializers.Serializer):
 
     def to_representation(self, instance):
         """
-        返却後の貸出情報を returned_lending として返す。
+        返却後の貸出情報と、取り置きへ進んだ予約があれば held_reservation として返す。
         """
-        return {"returned_lending": LendingSerializer(instance.lending).data}
+        held_reservation = None
+        if instance.held_reservation is not None:
+            held_reservation = ReservationSerializer(instance.held_reservation).data
+
+        return {
+            "returned_lending": LendingSerializer(instance.lending).data,
+            "held_reservation": held_reservation,
+        }
 
 
 class BookSerializer(serializers.ModelSerializer):
