@@ -99,6 +99,8 @@ class SearchConditionAccessMixin:
         staff_id = self.request.query_params.get("staff") or self.request.data.get(
             "staff"
         )
+        if staff_id is None and self.request.method == "POST":
+            staff_id = self.request.data.get("created_by")
         if staff_id is None:
             return None
 

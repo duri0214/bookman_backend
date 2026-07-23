@@ -163,6 +163,8 @@ class BookmanApiTest(APITestCase):
 
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(create_response.data["branch"], self.branch.id)
+        self.assertTrue(create_response.data["can_update"])
+        self.assertTrue(create_response.data["can_delete"])
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
         self.assertEqual(list_response.data[0]["name"], "返却期限間近")
         self.assertTrue(list_response.data[0]["can_update"])
@@ -273,6 +275,63 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(update_response.status_code, status.HTTP_404_NOT_FOUND)
         condition.refresh_from_db()
         self.assertEqual(condition.name, "他職員の条件")
+
+    def test_search_condition_rejects_counter_branch_share_create(self):
+        """
+        シナリオ:
+        - 入力: counter 職員による支店共有の保存条件作成ペイロード。
+        - 処理: 保存条件APIへPOSTする。
+        - 期待値: 作成は400で拒否され、保存条件が作成されないこと。
+        """
+        create_response = self.client.post(
+            "/bookman/api/search-conditions/",
+            {
+                "target_screen": "lendings",
+                "name": "支店共有",
+                "conditions": {"active": True},
+                "created_by": self.contact_staff.id,
+                "share_scope": SearchCondition.ShareScope.BRANCH,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(SearchCondition.objects.exists())
+
+    def test_search_condition_rejects_created_by_change_on_update(self):
+        """
+        シナリオ:
+        - 入力: counter 職員が作成した個人条件と manager 職員。
+        - 処理: counter 職員として作成職員を manager に変更するPATCHを実行する。
+        - 期待値: 更新は400で拒否され、作成職員と共有範囲が変わらないこと。
+        """
+        manager_staff = LibraryStaff.objects.create(
+            name="管理担当者",
+            branch=self.branch,
+            role="manager",
+        )
+        condition = SearchCondition.objects.create(
+            target_screen="lendings",
+            name="自分の条件",
+            conditions={"active": True},
+            created_by=self.contact_staff,
+            branch=self.branch,
+            share_scope=SearchCondition.ShareScope.PERSONAL,
+        )
+
+        update_response = self.client.patch(
+            f"/bookman/api/search-conditions/{condition.id}/?staff={self.contact_staff.id}",
+            {
+                "created_by": manager_staff.id,
+                "share_scope": SearchCondition.ShareScope.ADMIN,
+            },
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_400_BAD_REQUEST)
+        condition.refresh_from_db()
+        self.assertEqual(condition.created_by, self.contact_staff)
+        self.assertEqual(condition.share_scope, SearchCondition.ShareScope.PERSONAL)
 
     def test_search_condition_permission_context_returns_disabled_information(self):
         """

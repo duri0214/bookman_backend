@@ -120,32 +120,52 @@ class SearchConditionSerializer(serializers.ModelSerializer):
         """
         保存条件の共有範囲と職員権限の整合性を検証する。
         """
-        staff = attrs.get("created_by") or getattr(self.instance, "created_by", None)
+        created_by = attrs.get("created_by") or getattr(
+            self.instance,
+            "created_by",
+            None,
+        )
+        request_staff = self.context.get("staff") or created_by
         share_scope = attrs.get(
             "share_scope",
             getattr(self.instance, "share_scope", SearchCondition.ShareScope.PERSONAL),
         )
         branch = attrs.get("branch", getattr(self.instance, "branch", None))
 
-        if staff is None:
+        if (
+            self.instance is not None
+            and "created_by" in attrs
+            and attrs["created_by"] != self.instance.created_by
+        ):
+            raise serializers.ValidationError(
+                {"created_by": "保存条件の作成職員は変更できません。"}
+            )
+
+        if created_by is None or request_staff is None:
             return attrs
 
         if share_scope == SearchCondition.ShareScope.PERSONAL and branch is None:
-            attrs["branch"] = staff.branch
+            attrs["branch"] = created_by.branch
 
         if share_scope == SearchCondition.ShareScope.BRANCH:
+            if request_staff.role not in ["manager", "admin"]:
+                raise serializers.ValidationError(
+                    {
+                        "share_scope": "支店共有の保存条件は manager または admin のみ作成できます。"
+                    }
+                )
             if branch is None:
-                branch = staff.branch
+                branch = created_by.branch
                 attrs["branch"] = branch
             if branch is None:
                 raise serializers.ValidationError(
                     {"branch": "支店共有の保存条件には対象支店が必要です。"}
                 )
 
-        if share_scope == SearchCondition.ShareScope.ADMIN and staff.role not in [
+        if share_scope == SearchCondition.ShareScope.ADMIN and request_staff.role not in (
             "manager",
             "admin",
-        ]:
+        ):
             raise serializers.ValidationError(
                 {
                     "share_scope": "管理者共有の保存条件は manager または admin のみ作成できます。"
