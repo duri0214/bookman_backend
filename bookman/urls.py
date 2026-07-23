@@ -18,6 +18,11 @@ urlpatterns = [
     path("api/customers/", views.CustomerList.as_view(), name="customer_list"),
     path("api/staff/", views.LibraryStaffList.as_view(), name="library_staff_list"),
     path(
+        "api/staff/<int:pk>/",
+        views.LibraryStaffDetail.as_view(),
+        name="library_staff_detail",
+    ),
+    path(
         "api/search-conditions/",
         views.SearchConditionList.as_view(),
         name="search_condition_list",
