@@ -129,6 +129,29 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["name"], "西図書館")
         self.assertTrue(Branch.objects.filter(name="西図書館").exists())
 
+    def test_legacy_branch_create_endpoint_is_removed(self):
+        """
+        シナリオ:
+        - 入力: 旧互換の支店登録URLと支店登録ペイロード。
+        - 処理: 旧互換URLへPOSTリクエストする。
+        - 期待値: ルーティングされず404が返り、支店が作成されないこと。
+        """
+        payload = {
+            "name": "旧互換西図書館",
+            "address": "青森県上北郡六戸町西",
+            "phone": "0176-00-0002",
+            "remark": "旧互換",
+        }
+
+        response = self.client.post(
+            "/bookman/api/branches/create/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(Branch.objects.filter(name="旧互換西図書館").exists())
+
     def test_search_condition_create_list_update_and_delete_by_owner(self):
         """
         シナリオ:
