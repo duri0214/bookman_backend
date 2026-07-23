@@ -1,0 +1,11 @@
+[
+  {
+    "model": "bookman.municipality",
+    "pk": 1,
+    "fields": {
+      "name": "渋谷区",
+      "created_at": "2022-12-03",
+      "updated_at": "2022-12-03"
+    }
+  }
+]

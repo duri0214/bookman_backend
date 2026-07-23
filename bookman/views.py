@@ -1,4 +1,4 @@
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
@@ -16,6 +16,7 @@ from .models import (
     Customer,
     Lending,
     LibraryStaff,
+    Municipality,
     Reservation,
     SearchCondition,
 )
@@ -31,6 +32,7 @@ from .serializers import (
     LendingReturnSerializer,
     LendingSerializer,
     LibraryStaffSerializer,
+    MunicipalitySerializer,
     ReservationCancelSerializer,
     ReservationExpireSerializer,
     ReservationSerializer,
@@ -39,11 +41,55 @@ from .serializers import (
 )
 
 
+def get_request_municipality(request):
+    """
+    query parameter の municipality を優先し、未指定時は既定自治体を返す。
+    """
+    municipality_id = request.query_params.get("municipality")
+    if municipality_id is not None:
+        return Municipality.objects.filter(id=municipality_id).first()
+
+    municipality_with_branches = (
+        Municipality.objects.filter(branches__isnull=False).order_by("id").first()
+    )
+    if municipality_with_branches is not None:
+        return municipality_with_branches
+
+    return Municipality.objects.order_by("id").first()
+
+
+def has_municipality_query(request):
+    """
+    municipality query parameter が指定されているかを返す。
+    """
+    return request.query_params.get("municipality") is not None
+
+
+class MunicipalityList(generics.ListAPIView):
+    serializer_class = MunicipalitySerializer
+
+    def get_queryset(self):
+        return Municipality.objects.order_by("id")
+
+
 class BranchList(generics.ListCreateAPIView):
     serializer_class = BranchSerializer
 
     def get_queryset(self):
-        return Branch.objects.order_by("id")
+        queryset = Branch.objects.select_related("municipality").order_by("id")
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(municipality=municipality)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        municipality = serializer.validated_data.get("municipality")
+        if municipality is None:
+            municipality = get_request_municipality(self.request)
+        serializer.save(municipality=municipality)
 
 
 class BranchClosedDayList(generics.ListCreateAPIView):
@@ -58,6 +104,12 @@ class BranchClosedDayList(generics.ListCreateAPIView):
         branch_id = self.request.query_params.get("branch")
         if branch_id is not None:
             queryset = queryset.filter(branch_id=branch_id)
+
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
 
         return queryset
 
@@ -80,7 +132,14 @@ class LibraryStaffList(generics.ListCreateAPIView):
     serializer_class = LibraryStaffSerializer
 
     def get_queryset(self):
-        return LibraryStaff.objects.select_related("branch").order_by("id")
+        queryset = LibraryStaff.objects.select_related("branch").order_by("id")
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
+
+        return queryset
 
 
 class LibraryStaffDetail(generics.RetrieveUpdateAPIView):
@@ -242,11 +301,35 @@ class CategoryList(generics.ListAPIView):
 class BookList(generics.ListAPIView):
     serializer_class = BookSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["municipality"] = get_request_municipality(self.request)
+        return context
+
     def get_queryset(self):
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return Book.objects.none()
+        total_amount_filter = Q()
+        branch_stock_queryset = BranchBookStock.objects.select_related("branch")
+        if municipality is not None:
+            total_amount_filter = Q(branch_stocks__branch__municipality=municipality)
+            branch_stock_queryset = branch_stock_queryset.filter(
+                branch__municipality=municipality
+            )
+
         return (
             Book.objects.select_related("category")
-            .annotate(total_amount=Coalesce(Sum("branch_stocks__amount"), 0))
-            .prefetch_related("authors", "branch_stocks__branch")
+            .annotate(
+                total_amount=Coalesce(
+                    Sum("branch_stocks__amount", filter=total_amount_filter),
+                    0,
+                )
+            )
+            .prefetch_related(
+                "authors",
+                Prefetch("branch_stocks", queryset=branch_stock_queryset),
+            )
             .order_by("category_id", "id")
         )
 
@@ -254,10 +337,27 @@ class BookList(generics.ListAPIView):
 class BookCreate(generics.CreateAPIView):
     serializer_class = BookSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["municipality"] = get_request_municipality(self.request)
+        return context
+
     def get_queryset(self):
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return Book.objects.none()
+        total_amount_filter = Q()
+        if municipality is not None:
+            total_amount_filter = Q(branch_stocks__branch__municipality=municipality)
+
         return (
             Book.objects.select_related("category")
-            .annotate(total_amount=Coalesce(Sum("branch_stocks__amount"), 0))
+            .annotate(
+                total_amount=Coalesce(
+                    Sum("branch_stocks__amount", filter=total_amount_filter),
+                    0,
+                )
+            )
             .prefetch_related("authors", "branch_stocks__branch")
         )
 
@@ -265,11 +365,35 @@ class BookCreate(generics.CreateAPIView):
 class BookDetail(generics.RetrieveAPIView):
     serializer_class = BookSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["municipality"] = get_request_municipality(self.request)
+        return context
+
     def get_queryset(self):
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return Book.objects.none()
+        total_amount_filter = Q()
+        branch_stock_queryset = BranchBookStock.objects.select_related("branch")
+        if municipality is not None:
+            total_amount_filter = Q(branch_stocks__branch__municipality=municipality)
+            branch_stock_queryset = branch_stock_queryset.filter(
+                branch__municipality=municipality
+            )
+
         return (
             Book.objects.select_related("category")
-            .annotate(total_amount=Coalesce(Sum("branch_stocks__amount"), 0))
-            .prefetch_related("authors", "branch_stocks__branch")
+            .annotate(
+                total_amount=Coalesce(
+                    Sum("branch_stocks__amount", filter=total_amount_filter),
+                    0,
+                )
+            )
+            .prefetch_related(
+                "authors",
+                Prefetch("branch_stocks", queryset=branch_stock_queryset),
+            )
         )
 
 
@@ -277,7 +401,7 @@ class BranchBookStockList(generics.ListCreateAPIView):
     serializer_class = BranchBookStockSerializer
 
     def get_queryset(self):
-        return (
+        queryset = (
             BranchBookStock.objects.select_related("branch", "book")
             .annotate(
                 active_lending_count=Count(
@@ -293,13 +417,20 @@ class BranchBookStockList(generics.ListCreateAPIView):
             )
             .order_by("book_id", "branch_id", "id")
         )
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
+
+        return queryset
 
 
 class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
     serializer_class = BranchBookStockSerializer
 
     def get_queryset(self):
-        return BranchBookStock.objects.select_related("branch", "book").annotate(
+        queryset = BranchBookStock.objects.select_related("branch", "book").annotate(
             active_lending_count=Count(
                 "lendings",
                 filter=Q(lendings__active=True),
@@ -311,6 +442,13 @@ class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
                 distinct=True,
             ),
         )
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
+
+        return queryset
 
 
 class BranchBookStockTransfer(generics.GenericAPIView):
@@ -330,12 +468,21 @@ class LendingList(generics.ListCreateAPIView):
     serializer_class = LendingSerializer
 
     def get_queryset(self):
-        return Lending.objects.select_related(
+        queryset = Lending.objects.select_related(
             "branch_book_stock__book",
             "branch_book_stock__branch",
             "customer",
             "contact_staff",
         ).order_by("-id")
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(
+                branch_book_stock__branch__municipality=municipality
+            )
+
+        return queryset
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -372,11 +519,20 @@ class ReservationList(generics.ListCreateAPIView):
     serializer_class = ReservationSerializer
 
     def get_queryset(self):
-        return Reservation.objects.select_related(
+        queryset = Reservation.objects.select_related(
             "branch_book_stock__book",
             "branch_book_stock__branch",
             "customer",
         ).order_by("-id")
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(
+                branch_book_stock__branch__municipality=municipality
+            )
+
+        return queryset
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
