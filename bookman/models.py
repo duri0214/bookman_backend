@@ -88,6 +88,75 @@ class LibraryStaff(models.Model):
         return str(self.name)
 
 
+class SearchCondition(models.Model):
+    """
+    管理側画面で職員が再利用する検索条件。
+
+    Attributes:
+        target_screen: 保存条件を利用する管理側画面。
+        name: 職員に表示する保存条件名。
+        conditions: 検索条件のJSON。
+        created_by: 保存条件を作成した職員。
+        branch: 支店共有の対象支店。個人条件では作成職員の所属支店を保持する。
+        share_scope: 個人、支店共有、管理者共有の共有範囲。
+        owner_type: 将来の利用者向け保存条件拡張に備えた所有者種別。
+        created_at: 登録日。
+        updated_at: 更新日。
+    """
+
+    class ShareScope(models.TextChoices):
+        """
+        保存条件の共有範囲。
+
+        Attributes:
+            PERSONAL: 作成職員だけが利用する保存条件。
+            BRANCH: 対象支店の職員が利用する保存条件。
+            ADMIN: 管理職員が全支店向けに共有する保存条件。
+        """
+
+        PERSONAL = "personal", "個人"
+        BRANCH = "branch", "支店共有"
+        ADMIN = "admin", "管理者共有"
+
+    target_screen = models.CharField("対象画面", max_length=100)
+    name = models.CharField("保存条件名", max_length=255)
+    conditions = models.JSONField("検索条件JSON")
+    created_by = models.ForeignKey(
+        "LibraryStaff",
+        related_name="search_conditions",
+        on_delete=models.PROTECT,
+        verbose_name="作成職員",
+    )
+    branch = models.ForeignKey(
+        "Branch",
+        related_name="search_conditions",
+        on_delete=models.PROTECT,
+        verbose_name="対象支店",
+        null=True,
+        blank=True,
+    )
+    share_scope = models.CharField(
+        "共有範囲",
+        max_length=20,
+        choices=ShareScope.choices,
+        default=ShareScope.PERSONAL,
+    )
+    owner_type = models.CharField("所有者種別", max_length=20, default="staff")
+    created_at = models.DateField("登録日", auto_now_add=True)
+    updated_at = models.DateField("更新日", auto_now=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_screen", "name", "created_by"],
+                name="bookman_search_condition_unique_owner_name",
+            )
+        ]
+
+    def __str__(self):
+        return str(self.name)
+
+
 class Lending(models.Model):
     """
     支店別所蔵を起点にした貸出情報。

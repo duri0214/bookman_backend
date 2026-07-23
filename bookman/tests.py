@@ -15,6 +15,7 @@ from bookman.models import (
     Lending,
     LibraryStaff,
     Reservation,
+    SearchCondition,
 )
 
 
@@ -127,6 +128,238 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], "西図書館")
         self.assertTrue(Branch.objects.filter(name="西図書館").exists())
+
+    def test_search_condition_create_list_update_and_delete_by_owner(self):
+        """
+        シナリオ:
+        - 入力: counter 職員と管理画面向けの検索条件保存ペイロード。
+        - 処理: 保存条件APIへPOSTし、一覧GET、PATCH、DELETEを順に実行する。
+        - 期待値: 個人条件が作成・表示・更新・削除され、操作可否が true で返ること。
+        """
+        payload = {
+            "target_screen": "lendings",
+            "name": "返却期限間近",
+            "conditions": {"active": True, "due_within_days": 3},
+            "created_by": self.contact_staff.id,
+            "share_scope": SearchCondition.ShareScope.PERSONAL,
+        }
+
+        create_response = self.client.post(
+            "/bookman/api/search-conditions/",
+            payload,
+            format="json",
+        )
+        list_response = self.client.get(
+            f"/bookman/api/search-conditions/?staff={self.contact_staff.id}"
+        )
+        update_response = self.client.patch(
+            f"/bookman/api/search-conditions/{create_response.data['id']}/?staff={self.contact_staff.id}",
+            {"name": "返却期限3日以内"},
+            format="json",
+        )
+        delete_response = self.client.delete(
+            f"/bookman/api/search-conditions/{create_response.data['id']}/?staff={self.contact_staff.id}"
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data["branch"], self.branch.id)
+        self.assertTrue(create_response.data["can_update"])
+        self.assertTrue(create_response.data["can_delete"])
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data[0]["name"], "返却期限間近")
+        self.assertTrue(list_response.data[0]["can_update"])
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["name"], "返却期限3日以内")
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(SearchCondition.objects.exists())
+
+    def test_search_condition_list_limits_counter_to_allowed_scope(self):
+        """
+        シナリオ:
+        - 入力: 自分の個人条件、自支店共有、他支店共有、管理者共有がある状態。
+        - 処理: counter 職員として保存条件一覧APIへGETリクエストする。
+        - 期待値: 自分の個人条件、自支店共有、管理者共有だけが返ること。
+        """
+        second_branch_staff = LibraryStaff.objects.create(
+            name="東図書館担当者",
+            branch=self.second_branch,
+            role="counter",
+        )
+        manager_staff = LibraryStaff.objects.create(
+            name="管理担当者",
+            branch=self.branch,
+            role="manager",
+        )
+        own_condition = SearchCondition.objects.create(
+            target_screen="lendings",
+            name="自分の条件",
+            conditions={"active": True},
+            created_by=self.contact_staff,
+            branch=self.branch,
+            share_scope=SearchCondition.ShareScope.PERSONAL,
+        )
+        branch_condition = SearchCondition.objects.create(
+            target_screen="lendings",
+            name="自支店共有",
+            conditions={"branch": self.branch.id},
+            created_by=manager_staff,
+            branch=self.branch,
+            share_scope=SearchCondition.ShareScope.BRANCH,
+        )
+        SearchCondition.objects.create(
+            target_screen="lendings",
+            name="他支店共有",
+            conditions={"branch": self.second_branch.id},
+            created_by=second_branch_staff,
+            branch=self.second_branch,
+            share_scope=SearchCondition.ShareScope.BRANCH,
+        )
+        admin_condition = SearchCondition.objects.create(
+            target_screen="lendings",
+            name="全体共有",
+            conditions={"has_reservation": True},
+            created_by=manager_staff,
+            branch=self.branch,
+            share_scope=SearchCondition.ShareScope.ADMIN,
+        )
+
+        response = self.client.get(
+            f"/bookman/api/search-conditions/?staff={self.contact_staff.id}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {condition["id"] for condition in response.data},
+            {admin_condition.id, branch_condition.id, own_condition.id},
+        )
+
+    def test_search_condition_rejects_counter_admin_share_and_foreign_update(self):
+        """
+        シナリオ:
+        - 入力: counter 職員による管理者共有作成と、他職員の保存条件。
+        - 処理: 管理者共有作成POSTと他職員条件へのPATCHを実行する。
+        - 期待値: 作成は400、更新は参照範囲外として404が返り、保存条件が変わらないこと。
+        """
+        second_branch_staff = LibraryStaff.objects.create(
+            name="東図書館担当者",
+            branch=self.second_branch,
+            role="counter",
+        )
+        condition = SearchCondition.objects.create(
+            target_screen="lendings",
+            name="他職員の条件",
+            conditions={"active": True},
+            created_by=second_branch_staff,
+            branch=self.second_branch,
+            share_scope=SearchCondition.ShareScope.PERSONAL,
+        )
+
+        create_response = self.client.post(
+            "/bookman/api/search-conditions/",
+            {
+                "target_screen": "lendings",
+                "name": "全体共有",
+                "conditions": {"active": True},
+                "created_by": self.contact_staff.id,
+                "share_scope": SearchCondition.ShareScope.ADMIN,
+            },
+            format="json",
+        )
+        update_response = self.client.patch(
+            f"/bookman/api/search-conditions/{condition.id}/?staff={self.contact_staff.id}",
+            {"name": "変更できない"},
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(update_response.status_code, status.HTTP_404_NOT_FOUND)
+        condition.refresh_from_db()
+        self.assertEqual(condition.name, "他職員の条件")
+
+    def test_search_condition_rejects_counter_branch_share_create(self):
+        """
+        シナリオ:
+        - 入力: counter 職員による支店共有の保存条件作成ペイロード。
+        - 処理: 保存条件APIへPOSTする。
+        - 期待値: 作成は400で拒否され、保存条件が作成されないこと。
+        """
+        create_response = self.client.post(
+            "/bookman/api/search-conditions/",
+            {
+                "target_screen": "lendings",
+                "name": "支店共有",
+                "conditions": {"active": True},
+                "created_by": self.contact_staff.id,
+                "share_scope": SearchCondition.ShareScope.BRANCH,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(SearchCondition.objects.exists())
+
+    def test_search_condition_rejects_created_by_change_on_update(self):
+        """
+        シナリオ:
+        - 入力: counter 職員が作成した個人条件と manager 職員。
+        - 処理: counter 職員として作成職員を manager に変更するPATCHを実行する。
+        - 期待値: 更新は400で拒否され、作成職員と共有範囲が変わらないこと。
+        """
+        manager_staff = LibraryStaff.objects.create(
+            name="管理担当者",
+            branch=self.branch,
+            role="manager",
+        )
+        condition = SearchCondition.objects.create(
+            target_screen="lendings",
+            name="自分の条件",
+            conditions={"active": True},
+            created_by=self.contact_staff,
+            branch=self.branch,
+            share_scope=SearchCondition.ShareScope.PERSONAL,
+        )
+
+        update_response = self.client.patch(
+            f"/bookman/api/search-conditions/{condition.id}/?staff={self.contact_staff.id}",
+            {
+                "created_by": manager_staff.id,
+                "share_scope": SearchCondition.ShareScope.ADMIN,
+            },
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_400_BAD_REQUEST)
+        condition.refresh_from_db()
+        self.assertEqual(condition.created_by, self.contact_staff)
+        self.assertEqual(condition.share_scope, SearchCondition.ShareScope.PERSONAL)
+
+    def test_search_condition_permission_context_returns_disabled_information(self):
+        """
+        シナリオ:
+        - 入力: counter 職員と manager 職員が登録されている状態。
+        - 処理: 権限コンテキストAPIへそれぞれの職員IDでGETリクエストする。
+        - 期待値: counter は支店共有作成不可理由、manager は全件スコープが返ること。
+        """
+        manager_staff = LibraryStaff.objects.create(
+            name="管理担当者",
+            branch=self.branch,
+            role="manager",
+        )
+        counter_response = self.client.get(
+            f"/bookman/api/search-conditions/permissions/?staff={self.contact_staff.id}"
+        )
+        manager_response = self.client.get(
+            f"/bookman/api/search-conditions/permissions/?staff={manager_staff.id}"
+        )
+
+        self.assertEqual(counter_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(counter_response.data["can_create_personal"])
+        self.assertFalse(counter_response.data["can_create_branch"])
+        self.assertEqual(counter_response.data["record_scope"], "own_branch")
+        self.assertIn("manager", counter_response.data["disabled_reason"])
+        self.assertEqual(manager_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(manager_response.data["can_create_admin"])
+        self.assertEqual(manager_response.data["record_scope"], "all")
 
     def test_branch_closed_day_create_list_and_delete(self):
         """

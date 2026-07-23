@@ -37,6 +37,7 @@ from bookman.models import (
     Lending,
     LibraryStaff,
     Reservation,
+    SearchCondition,
 )
 
 
@@ -82,6 +83,125 @@ class LibraryStaffSerializer(serializers.ModelSerializer):
     class Meta:
         model = LibraryStaff
         fields = ["id", "name", "branch", "role"]
+
+
+class SearchConditionSerializer(serializers.ModelSerializer):
+    """
+    管理側の保存済み検索条件APIの入出力。
+
+    入力では職員、対象画面、条件JSON、共有範囲を受け取り、
+    レスポンスでは職員名、支店名、操作可否も返す。
+    """
+
+    created_by_name = serializers.CharField(source="created_by.name", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    can_update = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SearchCondition
+        fields = [
+            "id",
+            "target_screen",
+            "name",
+            "conditions",
+            "created_by",
+            "created_by_name",
+            "branch",
+            "branch_name",
+            "share_scope",
+            "owner_type",
+            "can_update",
+            "can_delete",
+        ]
+        read_only_fields = ["owner_type"]
+
+    def validate(self, attrs):
+        """
+        保存条件の共有範囲と職員権限の整合性を検証する。
+        """
+        created_by = attrs.get("created_by") or getattr(
+            self.instance,
+            "created_by",
+            None,
+        )
+        request_staff = self.context.get("staff") or created_by
+        share_scope = attrs.get(
+            "share_scope",
+            getattr(self.instance, "share_scope", SearchCondition.ShareScope.PERSONAL),
+        )
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+
+        if (
+            self.instance is not None
+            and "created_by" in attrs
+            and attrs["created_by"] != self.instance.created_by
+        ):
+            raise serializers.ValidationError(
+                {"created_by": "保存条件の作成職員は変更できません。"}
+            )
+
+        if created_by is None or request_staff is None:
+            return attrs
+
+        if share_scope == SearchCondition.ShareScope.PERSONAL and branch is None:
+            attrs["branch"] = created_by.branch
+
+        if share_scope == SearchCondition.ShareScope.BRANCH:
+            if request_staff.role not in ["manager", "admin"]:
+                raise serializers.ValidationError(
+                    {
+                        "share_scope": "支店共有の保存条件は manager または admin のみ作成できます。"
+                    }
+                )
+            if branch is None:
+                branch = created_by.branch
+                attrs["branch"] = branch
+            if branch is None:
+                raise serializers.ValidationError(
+                    {"branch": "支店共有の保存条件には対象支店が必要です。"}
+                )
+
+        if share_scope == SearchCondition.ShareScope.ADMIN and request_staff.role not in (
+            "manager",
+            "admin",
+        ):
+            raise serializers.ValidationError(
+                {
+                    "share_scope": "管理者共有の保存条件は manager または admin のみ作成できます。"
+                }
+            )
+
+        return attrs
+
+    def get_can_update(self, obj):
+        """
+        リクエスト職員が保存条件を更新できるかどうかを返す。
+        """
+        staff = self.context.get("staff")
+        return can_manage_search_condition(staff, obj)
+
+    def get_can_delete(self, obj):
+        """
+        リクエスト職員が保存条件を削除できるかどうかを返す。
+        """
+        staff = self.context.get("staff")
+        return can_manage_search_condition(staff, obj)
+
+
+def can_manage_search_condition(staff, condition):
+    """
+    職員ロールと所有関係から保存条件を変更できるか判定する。
+    """
+    if staff is None:
+        return False
+    if staff.role == "admin":
+        return True
+    if staff.role == "manager":
+        return condition.share_scope != SearchCondition.ShareScope.ADMIN or (
+            condition.created_by_id == staff.id
+        )
+    return condition.created_by_id == staff.id
 
 
 class BookBranchStockSerializer(serializers.ModelSerializer):
