@@ -82,9 +82,19 @@ migration の未生成差分を確認します。
 python manage.py makemigrations --check --dry-run
 ```
 
+開発用 DB のデータを入れ直す場合は、Django 管理下のテーブルを空にしてから初期データを読み込みます。
+
+```console
+python manage.py flush --noinput
+```
+
+`flush` は既存データを削除します。開発用 DB だけで実行し、本番 DB や共有 DB では実行しないでください。
+MySQL では通常、主キーの自動採番もリセットされます。テーブル定義や migration 状態から作り直したい場合は、DB を作り直してから `python manage.py migrate` を実行してください。
+
 初期データを読み込みます。
 
 ```console
+python manage.py loaddata bookman/fixtures/m_municipality-data.json
 python manage.py loaddata bookman/fixtures/m_branch-data.json
 python manage.py loaddata bookman/fixtures/m_category-data.json
 python manage.py loaddata bookman/fixtures/author-data.json
@@ -92,7 +102,19 @@ python manage.py loaddata bookman/fixtures/book-data.json
 python manage.py loaddata bookman/fixtures/branch-book-stock-data.json
 python manage.py loaddata bookman/fixtures/customer-data.json
 python manage.py loaddata bookman/fixtures/library-staff-data.json
+python manage.py loaddata bookman/fixtures/branch-closed-day-data.json
+python manage.py loaddata bookman/fixtures/lending-data.json
+python manage.py loaddata bookman/fixtures/reservation-data.json
+python manage.py loaddata bookman/fixtures/search-condition-data.json
 ```
+
+第二期の画面確認用 fixture では、以下の状態をまとめて確認できます。
+
+- すべての本に支店別所蔵があり、同じ本が複数支店にある状態
+- 支店間移動で、移動先に既存行があるケースとないケース
+- 貸出上限が異なる利用者、貸出中/返却済みの貸出データ
+- 予約待ち、取り置き中、期限注意、期限切れ、取消済みの予約データ
+- 複数支店の `counter` / `manager` / `admin` 職員と保存済み検索条件
 
 ## サーバーの起動
 

@@ -9,5 +9,225 @@
       "created_at": "2026-01-01",
       "updated_at": "2026-01-01"
     }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1002,
+    "fields": {
+      "branch": 1,
+      "book": 1,
+      "amount": 5,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1003,
+    "fields": {
+      "branch": 2,
+      "book": 1,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1004,
+    "fields": {
+      "branch": 2,
+      "book": 2,
+      "amount": 4,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1005,
+    "fields": {
+      "branch": 3,
+      "book": 2,
+      "amount": 1,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1006,
+    "fields": {
+      "branch": 1,
+      "book": 3,
+      "amount": 3,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1007,
+    "fields": {
+      "branch": 4,
+      "book": 3,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1008,
+    "fields": {
+      "branch": 5,
+      "book": 4,
+      "amount": 3,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1009,
+    "fields": {
+      "branch": 6,
+      "book": 4,
+      "amount": 1,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1010,
+    "fields": {
+      "branch": 1,
+      "book": 5,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1011,
+    "fields": {
+      "branch": 7,
+      "book": 5,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1012,
+    "fields": {
+      "branch": 8,
+      "book": 6,
+      "amount": 3,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1013,
+    "fields": {
+      "branch": 2,
+      "book": 6,
+      "amount": 1,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1014,
+    "fields": {
+      "branch": 9,
+      "book": 7,
+      "amount": 4,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1015,
+    "fields": {
+      "branch": 10,
+      "book": 7,
+      "amount": 1,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1016,
+    "fields": {
+      "branch": 1,
+      "book": 8,
+      "amount": 3,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1017,
+    "fields": {
+      "branch": 3,
+      "book": 8,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1018,
+    "fields": {
+      "branch": 4,
+      "book": 9,
+      "amount": 3,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1019,
+    "fields": {
+      "branch": 5,
+      "book": 9,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1020,
+    "fields": {
+      "branch": 6,
+      "book": 10,
+      "amount": 4,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1021,
+    "fields": {
+      "branch": 7,
+      "book": 10,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]

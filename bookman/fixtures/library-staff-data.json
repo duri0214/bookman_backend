@@ -9,5 +9,60 @@
       "created_at": "2026-01-01",
       "updated_at": "2026-01-01"
     }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1002,
+    "fields": {
+      "name": "中央図書館マネージャー",
+      "branch": 1,
+      "role": "manager",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1003,
+    "fields": {
+      "name": "西原図書館カウンター",
+      "branch": 2,
+      "role": "counter",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1004,
+    "fields": {
+      "name": "富ヶ谷図書館マネージャー",
+      "branch": 4,
+      "role": "manager",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1005,
+    "fields": {
+      "name": "全館管理者",
+      "branch": 1,
+      "role": "admin",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1006,
+    "fields": {
+      "name": "笹塚図書館カウンター",
+      "branch": 5,
+      "role": "counter",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]
