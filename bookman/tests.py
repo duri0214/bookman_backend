@@ -893,6 +893,130 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["total_amount"], 2)
         self.assertEqual(response.data["branch_stocks"][0]["amount"], 2)
 
+    def test_book_detail_accepts_update_request(self):
+        """
+        シナリオ:
+        - 入力: 既存書籍と、カテゴリ・著者・基本項目を差し替える更新ペイロード。
+        - 処理: 書籍詳細APIへPATCHリクエストする。
+        - 期待値: 書籍マスタの項目が更新され、既存の支店別所蔵数は維持されること。
+        """
+        BranchBookStock.objects.create(
+            branch=self.second_branch,
+            book=self.book,
+            amount=4,
+        )
+        payload = {
+            "name": "  吾輩は猫である 改訂  ",
+            "category": self.second_category.id,
+            "authors": [self.second_author.id],
+            "lead_text": "編集済みの紹介文です。",
+            "isbn": "9780000000099",
+            "publication_date": "2026-02-01",
+        }
+
+        response = self.client.patch(
+            f"/bookman/api/books/{self.book.id}/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.name, "吾輩は猫である 改訂")
+        self.assertEqual(self.book.category, self.second_category)
+        self.assertEqual(
+            list(self.book.authors.values_list("id", flat=True)),
+            [self.second_author.id],
+        )
+        self.assertEqual(self.book.lead_text, "編集済みの紹介文です。")
+        self.assertEqual(self.book.isbn, "9780000000099")
+        self.assertEqual(self.book.publication_date, date(2026, 2, 1))
+        self.assertEqual(response.data["total_amount"], 6)
+        self.assertEqual(
+            [stock["amount"] for stock in response.data["branch_stocks"]],
+            [2, 4],
+        )
+
+    def test_book_detail_update_scopes_branch_stocks_by_municipality(self):
+        """
+        シナリオ:
+        - 入力: 同じ書籍が複数自治体に所蔵されている状態と、自治体指定付きの書籍更新ペイロード。
+        - 処理: 書籍詳細APIへPATCHリクエストする。
+        - 期待値: 書籍項目は更新され、レスポンスの total_amount と branch_stocks は指定自治体内に絞られること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=5,
+        )
+
+        response = self.client.patch(
+            f"/bookman/api/books/{self.book.id}/?municipality={self.other_municipality.id}",
+            {"lead_text": "別自治体画面から編集した紹介文です。"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.lead_text, "別自治体画面から編集した紹介文です。")
+        self.assertEqual(response.data["total_amount"], 5)
+        self.assertEqual(
+            [stock["id"] for stock in response.data["branch_stocks"]],
+            [other_stock.id],
+        )
+
+    def test_book_detail_update_rejects_duplicate_blank_name_and_empty_authors(self):
+        """
+        シナリオ:
+        - 入力: 既存書籍と同名、空白だけの書籍名、空の著者配列。
+        - 処理: 書籍詳細APIへPATCHリクエストする。
+        - 期待値: 不正な更新は400で拒否され、既存書籍の内容が維持されること。
+        """
+        other_book = Book.objects.create(
+            name="こころ",
+            category=self.category,
+            lead_text="別の書籍です。",
+            isbn="9780000000010",
+            publication_date=date(2026, 1, 10),
+        )
+        other_book.authors.set([self.author])
+
+        duplicate_response = self.client.patch(
+            f"/bookman/api/books/{self.book.id}/",
+            {"name": "  こころ  "},
+            format="json",
+        )
+        blank_response = self.client.patch(
+            f"/bookman/api/books/{self.book.id}/",
+            {"name": "   "},
+            format="json",
+        )
+        empty_authors_response = self.client.patch(
+            f"/bookman/api/books/{self.book.id}/",
+            {"authors": []},
+            format="json",
+        )
+
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(blank_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            empty_authors_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.name, "吾輩は猫である")
+        self.assertEqual(
+            list(self.book.authors.values_list("id", flat=True)),
+            [self.author.id],
+        )
+
     def test_book_detail_total_amount_sums_all_branch_stocks(self):
         """
         シナリオ:
