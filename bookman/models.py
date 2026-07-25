@@ -42,7 +42,7 @@ class Book(models.Model):
         verbose_name="所蔵支店",
     )
     lead_text = models.TextField("紹介文")
-    isbn = models.CharField("ISBNコード", max_length=20)
+    isbn = models.CharField("ISBNコード", max_length=20, unique=True)
     publication_date = models.DateField("出版年月日")
     created_at = models.DateField("登録日", auto_now_add=True)
     updated_at = models.DateField("更新日", auto_now=True, null=True)
