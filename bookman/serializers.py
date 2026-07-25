@@ -53,6 +53,15 @@ class AuthorSerializer(serializers.ModelSerializer):
         model = Author
         fields = ["id", "name"]
 
+    def validate_name(self, value):
+        """
+        著者名は前後の空白を除いた値で保存する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        return trimmed_value
+
 
 class MunicipalitySerializer(serializers.ModelSerializer):
     class Meta:

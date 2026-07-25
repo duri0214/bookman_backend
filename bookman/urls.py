@@ -86,5 +86,10 @@ urlpatterns = [
         name="reservation_expire",
     ),
     path("api/authors/", views.AuthorList.as_view(), name="author_list"),
+    path(
+        "api/authors/<int:pk>/",
+        views.AuthorDetail.as_view(),
+        name="author_detail",
+    ),
     path("api/categories/", views.CategoryList.as_view(), name="category_list"),
 ]
