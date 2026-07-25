@@ -346,7 +346,14 @@ class AuthorDetail(generics.RetrieveUpdateAPIView):
         return Author.objects.order_by("id")
 
 
-class CategoryList(generics.ListAPIView):
+class CategoryList(generics.ListCreateAPIView):
+    serializer_class = CategorySerializer
+
+    def get_queryset(self):
+        return Category.objects.order_by("id")
+
+
+class CategoryDetail(generics.RetrieveUpdateAPIView):
     serializer_class = CategorySerializer
 
     def get_queryset(self):

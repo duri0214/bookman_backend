@@ -2606,3 +2606,104 @@ class BookmanApiTest(APITestCase):
             [self.author.id],
         )
         self.assertEqual(self.book.authors.get().name, "夏目漱石 改訂")
+
+    def test_category_api_create_retrieve_and_update(self):
+        """
+        シナリオ:
+        - 入力: 新規カテゴリ名・色コードと、前後に空白がある名称変更ペイロード。
+        - 処理: カテゴリAPIへPOST、GET、PATCHを順に実行する。
+        - 期待値: カテゴリを追加・確認・更新でき、名称は空白を除いて保存されること。
+        """
+        create_response = self.client.post(
+            "/bookman/api/categories/",
+            {"name": "  歴史  ", "color": "#ABCDEF"},
+            format="json",
+        )
+        detail_response = self.client.get(
+            f"/bookman/api/categories/{create_response.data['id']}/"
+        )
+        update_response = self.client.patch(
+            f"/bookman/api/categories/{create_response.data['id']}/",
+            {"name": "  歴史 改訂  ", "color": "#123456"},
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data["name"], "歴史")
+        self.assertEqual(create_response.data["color"], "#abcdef")
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.data["name"], "歴史")
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["name"], "歴史 改訂")
+        self.assertEqual(update_response.data["color"], "#123456")
+        self.assertTrue(Category.objects.filter(name="歴史 改訂").exists())
+
+    def test_category_api_rejects_duplicate_blank_name_and_invalid_color(self):
+        """
+        シナリオ:
+        - 入力: 既存カテゴリと同じ名称、空白だけのカテゴリ名、不正な色コード。
+        - 処理: カテゴリAPIへPOSTする。
+        - 期待値: 重複名、空値、不正な色コードは400で拒否され、カテゴリが増えないこと。
+        """
+        category_count = Category.objects.count()
+
+        duplicate_response = self.client.post(
+            "/bookman/api/categories/",
+            {"name": f"  {self.category.name}  ", "color": "#111111"},
+            format="json",
+        )
+        blank_response = self.client.post(
+            "/bookman/api/categories/",
+            {"name": "   ", "color": "#222222"},
+            format="json",
+        )
+        invalid_color_response = self.client.post(
+            "/bookman/api/categories/",
+            {"name": "自然科学", "color": "222222"},
+            format="json",
+        )
+
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(blank_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            invalid_color_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(Category.objects.count(), category_count)
+
+    def test_book_create_accepts_category_created_by_category_api(self):
+        """
+        シナリオ:
+        - 入力: カテゴリAPIで追加したカテゴリと、そのカテゴリIDを含む書籍登録ペイロード。
+        - 処理: カテゴリ登録APIへPOST後、書籍登録APIへPOSTリクエストする。
+        - 期待値: 追加したカテゴリを使って書籍が作成され、書籍登録レスポンスと一覧でカテゴリIDが返ること。
+        """
+        category_response = self.client.post(
+            "/bookman/api/categories/",
+            {"name": "郷土資料", "color": "#445566"},
+            format="json",
+        )
+
+        response = self.client.post(
+            "/bookman/api/books/create/",
+            {
+                "name": "六戸町史",
+                "category": category_response.data["id"],
+                "authors": [self.author.id],
+                "lead_text": "地域資料です。",
+                "isbn": "9780000000004",
+                "publication_date": "2026-01-04",
+            },
+            format="json",
+        )
+        list_response = self.client.get("/bookman/api/books/")
+
+        self.assertEqual(category_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        book = Book.objects.get(name="六戸町史")
+        self.assertEqual(book.category.name, "郷土資料")
+        self.assertEqual(response.data["category"], category_response.data["id"])
+        created_book_data = next(
+            book_data for book_data in list_response.data if book_data["id"] == book.id
+        )
+        self.assertEqual(created_book_data["category"], category_response.data["id"])
