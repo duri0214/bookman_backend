@@ -94,9 +94,9 @@ MySQL では通常、主キーの自動採番もリセットされます。テ�
 初期データを読み込みます。
 
 ```console
-python manage.py loaddata bookman/fixtures/m_municipality-data.json
-python manage.py loaddata bookman/fixtures/m_branch-data.json
-python manage.py loaddata bookman/fixtures/m_category-data.json
+python manage.py loaddata bookman/fixtures/municipality-data.json
+python manage.py loaddata bookman/fixtures/branch-data.json
+python manage.py loaddata bookman/fixtures/category-data.json
 python manage.py loaddata bookman/fixtures/author-data.json
 python manage.py loaddata bookman/fixtures/book-data.json
 python manage.py loaddata bookman/fixtures/branch-book-stock-data.json

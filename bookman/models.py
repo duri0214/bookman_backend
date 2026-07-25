@@ -15,9 +15,6 @@ class Municipality(models.Model):
     created_at = models.DateField("登録日", auto_now_add=True)
     updated_at = models.DateField("更新日", auto_now=True, null=True)
 
-    class Meta:
-        db_table = "bookman_m_municipality"
-
     def __str__(self):
         return str(self.name)
 
@@ -342,7 +339,6 @@ class Branch(models.Model):
     updated_at = models.DateField(auto_now=True, null=True)
 
     class Meta:
-        db_table = "bookman_m_branch"
         constraints = [
             models.UniqueConstraint(
                 fields=["municipality", "name"],
@@ -392,9 +388,6 @@ class BranchClosedDay(models.Model):
 class Category(models.Model):
     name = models.CharField("カテゴリ名", max_length=100, unique=True)
     color = models.CharField("色(16進数)", max_length=7, default="#000000")
-
-    class Meta:
-        db_table = "bookman_m_category"
 
     def __str__(self):
         return str(self.name)
