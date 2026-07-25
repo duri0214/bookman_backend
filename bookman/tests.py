@@ -809,6 +809,40 @@ class BookmanApiTest(APITestCase):
             list(book.authors.values_list("id", flat=True)), [self.second_author.id]
         )
 
+    def test_book_create_accepts_author_created_by_author_api(self):
+        """
+        シナリオ:
+        - 入力: 著者APIで追加した著者と、その著者IDを含む書籍登録ペイロード。
+        - 処理: 著者登録APIへPOST後、書籍登録APIへPOSTリクエストする。
+        - 期待値: 追加した著者を使って書籍が作成され、著者の多対多関連が保存されること。
+        """
+        author_response = self.client.post(
+            "/bookman/api/authors/",
+            {"name": "芥川龍之介"},
+            format="json",
+        )
+
+        response = self.client.post(
+            "/bookman/api/books/create/",
+            {
+                "name": "羅生門",
+                "category": self.category.id,
+                "authors": [author_response.data["id"]],
+                "lead_text": "短編小説です。",
+                "isbn": "9780000000003",
+                "publication_date": "2026-01-03",
+            },
+            format="json",
+        )
+
+        self.assertEqual(author_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        book = Book.objects.get(name="羅生門")
+        self.assertEqual(
+            list(book.authors.values_list("name", flat=True)),
+            ["芥川龍之介"],
+        )
+
     def test_book_detail_returns_frontend_fields(self):
         """
         シナリオ:
@@ -2464,3 +2498,77 @@ class BookmanApiTest(APITestCase):
             [category["id"] for category in category_response.data],
             [self.category.id, self.second_category.id],
         )
+
+    def test_author_api_create_retrieve_and_update(self):
+        """
+        シナリオ:
+        - 入力: 新規著者名と、前後に空白がある名称変更ペイロード。
+        - 処理: 著者APIへPOST、GET、PATCHを順に実行する。
+        - 期待値: 著者を追加・確認・更新でき、名称は空白を除いて保存されること。
+        """
+        create_response = self.client.post(
+            "/bookman/api/authors/",
+            {"name": "  太宰治  "},
+            format="json",
+        )
+        detail_response = self.client.get(
+            f"/bookman/api/authors/{create_response.data['id']}/"
+        )
+        update_response = self.client.patch(
+            f"/bookman/api/authors/{create_response.data['id']}/",
+            {"name": "  太宰治 改訂  "},
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data["name"], "太宰治")
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.data["name"], "太宰治")
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["name"], "太宰治 改訂")
+        self.assertTrue(Author.objects.filter(name="太宰治 改訂").exists())
+
+    def test_author_api_rejects_duplicate_and_blank_name(self):
+        """
+        シナリオ:
+        - 入力: 既存著者と同じ名称、空白だけの著者名。
+        - 処理: 著者APIへPOSTする。
+        - 期待値: 重複名と空値は400で拒否され、著者が増えないこと。
+        """
+        author_count = Author.objects.count()
+
+        duplicate_response = self.client.post(
+            "/bookman/api/authors/",
+            {"name": self.author.name},
+            format="json",
+        )
+        blank_response = self.client.post(
+            "/bookman/api/authors/",
+            {"name": "   "},
+            format="json",
+        )
+
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(blank_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Author.objects.count(), author_count)
+
+    def test_author_update_keeps_existing_book_relations(self):
+        """
+        シナリオ:
+        - 入力: 書籍に紐づく著者と著者名称変更ペイロード。
+        - 処理: 著者詳細APIへPATCHする。
+        - 期待値: 名称だけが更新され、既存書籍の著者紐づきは維持されること。
+        """
+        response = self.client.patch(
+            f"/bookman/api/authors/{self.author.id}/",
+            {"name": "夏目漱石 改訂"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.book.refresh_from_db()
+        self.assertEqual(
+            list(self.book.authors.values_list("id", flat=True)),
+            [self.author.id],
+        )
+        self.assertEqual(self.book.authors.get().name, "夏目漱石 改訂")

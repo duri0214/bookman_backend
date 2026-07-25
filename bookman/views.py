@@ -324,7 +324,14 @@ class SearchConditionPermissionContext(APIView):
         )
 
 
-class AuthorList(generics.ListAPIView):
+class AuthorList(generics.ListCreateAPIView):
+    serializer_class = AuthorSerializer
+
+    def get_queryset(self):
+        return Author.objects.order_by("id")
+
+
+class AuthorDetail(generics.RetrieveUpdateAPIView):
     serializer_class = AuthorSerializer
 
     def get_queryset(self):
