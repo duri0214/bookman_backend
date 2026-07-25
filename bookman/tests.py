@@ -1810,6 +1810,100 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["max_lending_count"], 3)
         self.assertTrue(Customer.objects.filter(name="鈴木一郎").exists())
 
+    def test_customer_detail_updates_name_phone_and_lending_limit(self):
+        """
+        シナリオ:
+        - 入力: 既存利用者と、氏名・電話番号・貸出上限冊数の更新ペイロード。
+        - 処理: 利用者詳細APIへPATCHリクエストする。
+        - 期待値: 利用者マスタの各項目が更新されること。
+        """
+        response = self.client.patch(
+            f"/bookman/api/customers/{self.customer.id}/",
+            {
+                "name": "山田太郎 改訂",
+                "phone": "090-1111-2222",
+                "max_lending_count": 4,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "山田太郎 改訂")
+        self.assertEqual(response.data["phone"], "090-1111-2222")
+        self.assertEqual(response.data["max_lending_count"], 4)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.name, "山田太郎 改訂")
+        self.assertEqual(self.customer.phone, "090-1111-2222")
+        self.assertEqual(self.customer.max_lending_count, 4)
+
+    def test_customer_update_rejects_blank_duplicate_name_and_zero_lending_limit(self):
+        """
+        シナリオ:
+        - 入力: 空白だけの氏名、重複する氏名、0冊の貸出上限冊数。
+        - 処理: 利用者詳細APIへPATCHリクエストする。
+        - 期待値: 不正な更新は400で拒否され、既存利用者の内容が維持されること。
+        """
+        blank_response = self.client.patch(
+            f"/bookman/api/customers/{self.customer.id}/",
+            {"name": "   "},
+            format="json",
+        )
+        duplicate_response = self.client.patch(
+            f"/bookman/api/customers/{self.customer.id}/",
+            {"name": self.second_customer.name},
+            format="json",
+        )
+        zero_limit_response = self.client.patch(
+            f"/bookman/api/customers/{self.customer.id}/",
+            {"max_lending_count": 0},
+            format="json",
+        )
+
+        self.assertEqual(blank_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(zero_limit_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.name, "山田太郎")
+        self.assertEqual(self.customer.max_lending_count, 2)
+
+    def test_customer_update_keeps_lending_and_reservation_relations(self):
+        """
+        シナリオ:
+        - 入力: 貸出中・予約中データに紐づく利用者と利用者更新ペイロード。
+        - 処理: 利用者詳細APIへPATCHし、貸出一覧APIと予約一覧APIへGETリクエストする。
+        - 期待値: 既存の貸出・予約は維持され、更新後の利用者名が返ること。
+        """
+        Lending.objects.create(
+            branch_book_stock=self.branch_stock,
+            return_date=date(2026, 1, 15),
+            customer=self.customer,
+            contact_staff=self.contact_staff,
+        )
+        Reservation.objects.create(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            status=Reservation.Status.WAITING,
+        )
+
+        update_response = self.client.patch(
+            f"/bookman/api/customers/{self.customer.id}/",
+            {"name": "貸出予約利用者 改訂"},
+            format="json",
+        )
+        lending_response = self.client.get("/bookman/api/lendings/")
+        reservation_response = self.client.get("/bookman/api/reservations/")
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Lending.objects.filter(customer=self.customer).count(), 1)
+        self.assertEqual(Reservation.objects.filter(customer=self.customer).count(), 1)
+        self.assertEqual(
+            lending_response.data[0]["customer_name"], "貸出予約利用者 改訂"
+        )
+        self.assertEqual(
+            reservation_response.data[0]["customer_name"],
+            "貸出予約利用者 改訂",
+        )
+
     def test_staff_list_returns_business_staff_fields(self):
         """
         シナリオ:

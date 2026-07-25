@@ -25,6 +25,11 @@ urlpatterns = [
         name="branch_closed_day_detail",
     ),
     path("api/customers/", views.CustomerList.as_view(), name="customer_list"),
+    path(
+        "api/customers/<int:pk>/",
+        views.CustomerDetail.as_view(),
+        name="customer_detail",
+    ),
     path("api/staff/", views.LibraryStaffList.as_view(), name="library_staff_list"),
     path(
         "api/staff/<int:pk>/",
