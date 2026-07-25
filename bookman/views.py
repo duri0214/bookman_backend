@@ -411,6 +411,12 @@ class BookDetail(generics.RetrieveAPIView):
 class BranchBookStockList(generics.ListCreateAPIView):
     serializer_class = BranchBookStockSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["municipality"] = get_request_municipality(self.request)
+        context["has_municipality_query"] = has_municipality_query(self.request)
+        return context
+
     def get_queryset(self):
         queryset = (
             BranchBookStock.objects.select_related("branch", "book")
@@ -439,6 +445,12 @@ class BranchBookStockList(generics.ListCreateAPIView):
 
 class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
     serializer_class = BranchBookStockSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["municipality"] = get_request_municipality(self.request)
+        context["has_municipality_query"] = has_municipality_query(self.request)
+        return context
 
     def get_queryset(self):
         queryset = BranchBookStock.objects.select_related("branch", "book").annotate(

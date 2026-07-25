@@ -763,6 +763,43 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["amount"], 2)
         self.assertEqual(response.data[0]["available_amount"], 2)
 
+    def test_branch_book_stock_list_matches_book_detail_scope(self):
+        """
+        シナリオ:
+        - 入力: 同じ書籍が既定自治体と別自治体の支店に所蔵されている状態。
+        - 処理: 別自治体を指定して所蔵数一覧APIと書籍詳細APIへGETリクエストする。
+        - 期待値: どちらのAPIも同じ自治体境界の支店別所蔵だけを返すこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=5,
+        )
+
+        stock_response = self.client.get(
+            f"/bookman/api/branch-book-stocks/?municipality={self.other_municipality.id}"
+        )
+        detail_response = self.client.get(
+            f"/bookman/api/books/{self.book.id}/?municipality={self.other_municipality.id}"
+        )
+
+        self.assertEqual(stock_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [stock["id"] for stock in stock_response.data], [other_stock.id]
+        )
+        self.assertEqual(
+            [stock["id"] for stock in detail_response.data["branch_stocks"]],
+            [other_stock.id],
+        )
+
     def test_branch_book_stock_list_returns_available_amount(self):
         """
         シナリオ:
@@ -809,6 +846,65 @@ class BookmanApiTest(APITestCase):
         detail_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
         self.assertEqual(detail_response.data["total_amount"], 3)
 
+    def test_branch_book_stock_create_rejects_branch_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 別自治体に属する支店を指定した所蔵登録ペイロード。
+        - 処理: 既定自治体スコープの所蔵数一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、自治体外支店の所蔵が作成されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        payload = {
+            "branch": other_branch.id,
+            "book": self.book.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["branch"][0], "選択中自治体の支店を指定してください。"
+        )
+        self.assertFalse(
+            BranchBookStock.objects.filter(branch=other_branch, book=self.book).exists()
+        )
+
+    def test_branch_book_stock_create_rejects_duplicate_branch_book_pair(self):
+        """
+        シナリオ:
+        - 入力: 既に同じ支店・書籍の所蔵が登録済みの状態と重複登録ペイロード。
+        - 処理: 所蔵数一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、支店内で対象書籍の所蔵行を重複作成できないこと。
+        """
+        payload = {
+            "branch": self.branch.id,
+            "book": self.book.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["non_field_errors"][0],
+            "この支店には対象書籍の所蔵が既に登録されています。",
+        )
+        self.assertEqual(
+            BranchBookStock.objects.filter(branch=self.branch, book=self.book).count(),
+            1,
+        )
+
     def test_branch_book_stock_detail_accepts_amount_update(self):
         """
         シナリオ:
@@ -825,6 +921,34 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.branch_stock.refresh_from_db()
         self.assertEqual(self.branch_stock.amount, 3)
+
+    def test_branch_book_stock_detail_rejects_branch_update_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 登録済みの支店別所蔵数と、別自治体に属する更新先支店。
+        - 処理: 既定自治体スコープの所蔵数詳細APIへPATCHリクエストする。
+        - 期待値: 400 が返り、BranchBookStock の支店が変更されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+
+        response = self.client.patch(
+            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/",
+            {"branch": other_branch.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["branch"][0], "選択中自治体の支店を指定してください。"
+        )
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.branch, self.branch)
 
     def test_branch_book_stock_transfer_creates_destination_stock(self):
         """
