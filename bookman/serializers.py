@@ -59,6 +59,15 @@ class MunicipalitySerializer(serializers.ModelSerializer):
         model = Municipality
         fields = ["id", "name"]
 
+    def validate_name(self, value):
+        """
+        自治体名は前後の空白を除いた値で保存する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        return trimmed_value
+
 
 class BranchSerializer(serializers.ModelSerializer):
     municipality = serializers.PrimaryKeyRelatedField(

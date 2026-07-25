@@ -8,6 +8,11 @@ urlpatterns = [
         views.MunicipalityList.as_view(),
         name="municipality_list",
     ),
+    path(
+        "api/municipalities/<int:pk>/",
+        views.MunicipalityDetail.as_view(),
+        name="municipality_detail",
+    ),
     path("api/branches/", views.BranchList.as_view(), name="branch_list"),
     path(
         "api/branch-closed-days/",
