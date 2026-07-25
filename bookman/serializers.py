@@ -266,6 +266,15 @@ class CustomerSerializer(serializers.ModelSerializer):
         model = Customer
         fields = ["id", "name", "phone", "max_lending_count"]
 
+    def validate_max_lending_count(self, value):
+        """
+        貸出上限冊数は1冊以上を必須にする。
+        """
+        if value <= 0:
+            raise serializers.ValidationError("1以上の値を指定してください。")
+
+        return value
+
 
 class LibraryStaffSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(choices=["counter", "manager", "admin"])

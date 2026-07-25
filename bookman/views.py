@@ -210,6 +210,13 @@ class CustomerList(generics.ListCreateAPIView):
         return Customer.objects.order_by("id")
 
 
+class CustomerDetail(generics.RetrieveUpdateAPIView):
+    serializer_class = CustomerSerializer
+
+    def get_queryset(self):
+        return Customer.objects.order_by("id")
+
+
 class LibraryStaffList(generics.ListCreateAPIView):
     serializer_class = LibraryStaffSerializer
 
