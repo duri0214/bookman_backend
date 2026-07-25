@@ -36,9 +36,9 @@ class BookmanFixtureTest(TransactionTestCase):
         - 期待値: fixture が投入でき、所蔵、貸出中、予約中、職員 role を確認できること。
         """
         fixture_paths = [
-            "bookman/fixtures/m_municipality-data.json",
-            "bookman/fixtures/m_branch-data.json",
-            "bookman/fixtures/m_category-data.json",
+            "bookman/fixtures/municipality-data.json",
+            "bookman/fixtures/branch-data.json",
+            "bookman/fixtures/category-data.json",
             "bookman/fixtures/author-data.json",
             "bookman/fixtures/book-data.json",
             "bookman/fixtures/branch-book-stock-data.json",
