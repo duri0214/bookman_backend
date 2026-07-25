@@ -817,6 +817,34 @@ class BookSerializer(serializers.ModelSerializer):
             "branch",
             "amount",
         ]
+        extra_kwargs = {"isbn": {"validators": []}}
+
+    def validate_isbn(self, value):
+        """
+        ISBN は前後の空白とハイフンを除いた値で保存し、形式と重複を検証する。
+        """
+        normalized_value = value.strip().replace("-", "")
+        if not normalized_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+
+        is_isbn_10 = (
+            len(normalized_value) == 10
+            and normalized_value[:9].isdigit()
+            and (normalized_value[9].isdigit() or normalized_value[9] == "X")
+        )
+        is_isbn_13 = len(normalized_value) == 13 and normalized_value.isdigit()
+        if not is_isbn_10 and not is_isbn_13:
+            raise serializers.ValidationError(
+                "ISBN-10 または ISBN-13 の形式で入力してください。"
+            )
+
+        duplicate_queryset = Book.objects.filter(isbn=normalized_value)
+        if self.instance is not None:
+            duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+        if duplicate_queryset.exists():
+            raise serializers.ValidationError("このISBNは既に登録されています。")
+
+        return normalized_value
 
     def validate_name(self, value):
         """

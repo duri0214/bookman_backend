@@ -77,6 +77,10 @@ class BookmanFixtureTest(TransactionTestCase):
             Reservation.objects.filter(status=Reservation.Status.HELD).exists()
         )
         self.assertEqual(
+            Book.objects.values("isbn").distinct().count(),
+            Book.objects.count(),
+        )
+        self.assertEqual(
             set(LibraryStaff.objects.values_list("role", flat=True)),
             {"counter", "manager", "admin"},
         )
@@ -827,7 +831,7 @@ class BookmanApiTest(APITestCase):
             "category": self.second_category.id,
             "authors": [self.second_author.id],
             "lead_text": "宮沢賢治の童話です。",
-            "isbn": "9780000000002",
+            "isbn": "978-0-0000-0000-2",
             "publication_date": "2026-01-02",
             "municipality": self.municipality.id,
             "branch": self.second_branch.id,
@@ -843,6 +847,7 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["branch_stocks"][0]["amount"], 3)
         book = Book.objects.get(name="銀河鉄道の夜")
         self.assertEqual(book.category, self.second_category)
+        self.assertEqual(book.isbn, "9780000000002")
         self.assertEqual(
             list(book.authors.values_list("id", flat=True)), [self.second_author.id]
         )
@@ -988,6 +993,63 @@ class BookmanApiTest(APITestCase):
         self.assertIn("municipality", response.data)
         self.assertFalse(Book.objects.filter(name="セロ弾きのゴーシュ").exists())
 
+    def test_book_create_rejects_duplicate_isbn(self):
+        """
+        シナリオ:
+        - 入力: 既存書籍とハイフン有無だけが異なる同一ISBNの書籍登録ペイロード。
+        - 処理: 書籍登録APIへPOSTリクエストする。
+        - 期待値: 400 が返り、ISBN項目の重複エラーとして拒否されること。
+        """
+        payload = {
+            "name": "坊っちゃん",
+            "category": self.second_category.id,
+            "authors": [self.second_author.id],
+            "lead_text": "別の書籍です。",
+            "isbn": "978-0-0000-0000-1",
+            "publication_date": "2026-01-07",
+            "municipality": self.municipality.id,
+            "branch": self.second_branch.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/books/create/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["isbn"][0], "このISBNは既に登録されています。")
+        self.assertFalse(Book.objects.filter(name="坊っちゃん").exists())
+
+    def test_book_create_rejects_invalid_isbn_format(self):
+        """
+        シナリオ:
+        - 入力: ISBN-10 / ISBN-13 の桁数に合わないISBNを含む書籍登録ペイロード。
+        - 処理: 書籍登録APIへPOSTリクエストする。
+        - 期待値: 400 が返り、ISBN項目の形式エラーとして拒否されること。
+        """
+        payload = {
+            "name": "草枕",
+            "category": self.second_category.id,
+            "authors": [self.second_author.id],
+            "lead_text": "別の書籍です。",
+            "isbn": "978-abc",
+            "publication_date": "2026-01-08",
+            "municipality": self.municipality.id,
+            "branch": self.second_branch.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/books/create/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["isbn"][0],
+            "ISBN-10 または ISBN-13 の形式で入力してください。",
+        )
+        self.assertFalse(Book.objects.filter(name="草枕").exists())
+
     def test_book_detail_returns_frontend_fields(self):
         """
         シナリオ:
@@ -1127,6 +1189,33 @@ class BookmanApiTest(APITestCase):
             list(self.book.authors.values_list("id", flat=True)),
             [self.author.id],
         )
+
+    def test_book_detail_update_rejects_duplicate_isbn(self):
+        """
+        シナリオ:
+        - 入力: 別書籍のISBNとハイフン有無だけが異なるISBN更新ペイロード。
+        - 処理: 書籍詳細APIへPATCHリクエストする。
+        - 期待値: 400 が返り、既存書籍のISBNは更新されないこと。
+        """
+        other_book = Book.objects.create(
+            name="こころ",
+            category=self.category,
+            lead_text="別の書籍です。",
+            isbn="9780000000010",
+            publication_date=date(2026, 1, 10),
+        )
+        other_book.authors.set([self.author])
+
+        response = self.client.patch(
+            f"/bookman/api/books/{self.book.id}/",
+            {"isbn": "978-0-0000-0001-0"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["isbn"][0], "このISBNは既に登録されています。")
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.isbn, "9780000000001")
 
     def test_book_detail_total_amount_sums_all_branch_stocks(self):
         """
