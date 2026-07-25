@@ -44,19 +44,13 @@ from .serializers import (
 
 def get_request_municipality(request):
     """
-    query parameter の municipality を優先し、未指定時は既定自治体を返す。
+    query parameter の municipality が指定された場合だけ自治体を返す。
     """
     municipality_id = request.query_params.get("municipality")
     if municipality_id is not None:
         return Municipality.objects.filter(id=municipality_id).first()
 
-    municipality_with_branches = (
-        Municipality.objects.filter(branches__isnull=False).order_by("id").first()
-    )
-    if municipality_with_branches is not None:
-        return municipality_with_branches
-
-    return Municipality.objects.order_by("id").first()
+    return None
 
 
 def has_municipality_query(request):
@@ -71,8 +65,11 @@ class RequiredMunicipalityMutationMixin:
     状態変更APIでは選択中自治体の明示指定を必須にする。
     """
 
+    def get_mutation_municipality_id(self):
+        return self.request.query_params.get("municipality")
+
     def get_required_municipality(self):
-        municipality_id = self.request.query_params.get("municipality")
+        municipality_id = self.get_mutation_municipality_id()
         if municipality_id is None:
             raise ValidationError({"municipality": "自治体を指定してください。"})
 
@@ -106,10 +103,19 @@ class MunicipalityDetail(generics.RetrieveUpdateAPIView):
 class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
     serializer_class = BranchSerializer
 
+    def get_mutation_municipality_id(self):
+        municipality_id = self.request.query_params.get("municipality")
+        if municipality_id is None:
+            municipality_id = self.request.data.get("municipality")
+        return municipality_id
+
     def get_queryset(self):
         queryset = Branch.objects.select_related("municipality").order_by("id")
-        municipality = get_request_municipality(self.request)
-        if municipality is None and has_municipality_query(self.request):
+        municipality = None
+        has_municipality = has_municipality_query(self.request)
+        if has_municipality:
+            municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality:
             return queryset.none()
         if municipality is not None:
             queryset = queryset.filter(municipality=municipality)
@@ -449,7 +455,8 @@ class BranchBookStockMunicipalityScopeMixin:
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context["municipality"] = self.get_municipality()
+        if self.request.method not in SAFE_METHODS:
+            context["municipality"] = self.get_municipality()
         return context
 
 
@@ -476,7 +483,12 @@ class BranchBookStockList(
             )
             .order_by("book_id", "branch_id", "id")
         )
-        return queryset.filter(branch__municipality=self.get_municipality())
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
+        return queryset
 
 
 class BranchBookStockDetail(
@@ -498,7 +510,12 @@ class BranchBookStockDetail(
                 distinct=True,
             ),
         )
-        return queryset.filter(branch__municipality=self.get_municipality())
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
+        return queryset
 
 
 class BranchBookStockTransfer(generics.GenericAPIView):

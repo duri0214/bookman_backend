@@ -312,6 +312,33 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["id"], other_branch.id)
         self.assertEqual(response.data[0]["municipality"], self.other_municipality.id)
 
+    def test_branch_list_without_municipality_returns_all_municipalities(self):
+        """
+        シナリオ:
+        - 入力: 複数自治体に支店データがある状態。
+        - 処理: municipality を指定せずに支店一覧APIへGETリクエストする。
+        - 期待値: 特定自治体へ暗黙に絞られず、全自治体の支店が返ること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+
+        response = self.client.get("/bookman/api/branches/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [branch["id"] for branch in response.data],
+            [self.branch.id, self.second_branch.id, other_branch.id],
+        )
+        self.assertEqual(
+            {branch["municipality"] for branch in response.data},
+            {self.municipality.id, self.other_municipality.id},
+        )
+
     def test_branch_create_accepts_explicit_municipality(self):
         """
         シナリオ:
@@ -327,11 +354,7 @@ class BookmanApiTest(APITestCase):
             "remark": "別自治体本館",
         }
 
-        response = self.client.post(
-            f"/bookman/api/branches/?municipality={self.other_municipality.id}",
-            payload,
-            format="json",
-        )
+        response = self.client.post("/bookman/api/branches/", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["municipality"], self.other_municipality.id)
@@ -840,15 +863,24 @@ class BookmanApiTest(APITestCase):
             amount=5,
         )
 
-        default_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
+        unscoped_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
+        scoped_response = self.client.get(
+            f"/bookman/api/books/{self.book.id}/?municipality={self.municipality.id}"
+        )
         other_response = self.client.get(
             f"/bookman/api/books/{self.book.id}/?municipality={self.other_municipality.id}"
         )
 
-        self.assertEqual(default_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(default_response.data["total_amount"], 2)
+        self.assertEqual(unscoped_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(unscoped_response.data["total_amount"], 7)
         self.assertEqual(
-            [stock["id"] for stock in default_response.data["branch_stocks"]],
+            [stock["id"] for stock in unscoped_response.data["branch_stocks"]],
+            [self.branch_stock.id, other_stock.id],
+        )
+        self.assertEqual(scoped_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(scoped_response.data["total_amount"], 2)
+        self.assertEqual(
+            [stock["id"] for stock in scoped_response.data["branch_stocks"]],
             [self.branch_stock.id],
         )
         self.assertEqual(other_response.status_code, status.HTTP_200_OK)
@@ -914,17 +946,40 @@ class BookmanApiTest(APITestCase):
             [other_stock.id],
         )
 
-    def test_branch_book_stock_list_rejects_missing_municipality(self):
+    def test_branch_book_stock_list_without_municipality_returns_all_municipalities(
+        self,
+    ):
         """
         シナリオ:
-        - 入力: municipality query parameter を指定しない所蔵数一覧リクエスト。
+        - 入力: 複数自治体に支店別所蔵数がある状態。
         - 処理: 所蔵数一覧APIへGETリクエストする。
-        - 期待値: 400 が返り、暗黙の自治体選択で所蔵数一覧を返さないこと。
+        - 期待値: 特定自治体へ暗黙に絞られず、全自治体の所蔵と自治体フィールドが返ること。
         """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=5,
+        )
+
         response = self.client.get("/bookman/api/branch-book-stocks/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [stock["id"] for stock in response.data],
+            [self.branch_stock.id, other_stock.id],
+        )
+        self.assertEqual(
+            {stock["municipality"] for stock in response.data},
+            {self.municipality.id, self.other_municipality.id},
+        )
+        self.assertEqual(response.data[0]["municipality_name"], "六戸町")
 
     def test_branch_book_stock_list_returns_available_amount(self):
         """

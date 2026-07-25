@@ -306,6 +306,12 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
     """
 
     branch_name = serializers.CharField(source="branch.name", read_only=True)
+    municipality = serializers.IntegerField(
+        source="branch.municipality_id", read_only=True
+    )
+    municipality_name = serializers.CharField(
+        source="branch.municipality.name", read_only=True
+    )
     book_name = serializers.CharField(source="book.name", read_only=True)
     available_amount = serializers.SerializerMethodField()
 
@@ -315,6 +321,8 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
             "id",
             "branch",
             "branch_name",
+            "municipality",
+            "municipality_name",
             "book",
             "book_name",
             "amount",
