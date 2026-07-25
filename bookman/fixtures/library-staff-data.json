@@ -64,5 +64,27 @@
       "created_at": "2026-01-01",
       "updated_at": "2026-01-01"
     }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1007,
+    "fields": {
+      "name": "目黒中央図書館カウンター",
+      "branch": 11,
+      "role": "counter",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.librarystaff",
+    "pk": 1008,
+    "fields": {
+      "name": "目黒区管理者",
+      "branch": 11,
+      "role": "admin",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]

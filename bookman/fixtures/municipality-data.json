@@ -7,5 +7,14 @@
       "created_at": "2022-12-03",
       "updated_at": "2022-12-03"
     }
+  },
+  {
+    "model": "bookman.municipality",
+    "pk": 2,
+    "fields": {
+      "name": "目黒区",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]

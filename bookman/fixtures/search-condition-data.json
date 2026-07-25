@@ -50,5 +50,23 @@
       "created_at": "2026-01-01",
       "updated_at": "2026-01-01"
     }
+  },
+  {
+    "model": "bookman.searchcondition",
+    "pk": 1004,
+    "fields": {
+      "target_screen": "branch-book-stocks",
+      "name": "目黒区の所蔵",
+      "conditions": {
+        "municipality": 2,
+        "branch": 11
+      },
+      "created_by": 1008,
+      "branch": 11,
+      "share_scope": "admin",
+      "owner_type": "staff",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]

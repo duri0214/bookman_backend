@@ -46,7 +46,7 @@ class BookmanFixtureTest(TransactionTestCase):
         シナリオ:
         - 入力: 第二期画面確認用 fixture 一式。
         - 処理: fixture を依存順に loaddata し、代表 API へGETリクエストする。
-        - 期待値: fixture が投入でき、所蔵、貸出中、予約中、職員 role を確認できること。
+        - 期待値: fixture が投入でき、複数自治体境界、管理マスタ、所蔵、貸出中、予約中、職員 role を確認できること。
         """
         fixture_paths = [
             "bookman/fixtures/municipality-data.json",
@@ -69,20 +69,62 @@ class BookmanFixtureTest(TransactionTestCase):
         stock_response = self.client.get(
             "/bookman/api/branch-book-stocks/?municipality=1"
         )
+        other_stock_response = self.client.get(
+            "/bookman/api/branch-book-stocks/?municipality=2"
+        )
+        municipality_response = self.client.get("/bookman/api/municipalities/")
+        branch_response = self.client.get("/bookman/api/branches/?municipality=2")
+        book_response = self.client.get("/bookman/api/books/?municipality=2")
         lending_response = self.client.get("/bookman/api/lendings/")
+        other_lending_response = self.client.get(
+            "/bookman/api/lendings/?municipality=2"
+        )
         reservation_response = self.client.get("/bookman/api/reservations/")
+        other_reservation_response = self.client.get(
+            "/bookman/api/reservations/?municipality=2"
+        )
         staff_response = self.client.get("/bookman/api/staff/")
+        other_staff_response = self.client.get("/bookman/api/staff/?municipality=2")
+        author_response = self.client.get("/bookman/api/authors/")
+        category_response = self.client.get("/bookman/api/categories/")
 
         self.assertEqual(stock_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_stock_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(municipality_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(branch_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(book_response.status_code, status.HTTP_200_OK)
         self.assertEqual(lending_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_lending_response.status_code, status.HTTP_200_OK)
         self.assertEqual(reservation_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_reservation_response.status_code, status.HTTP_200_OK)
         self.assertEqual(staff_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_staff_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(author_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(category_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Municipality.objects.count(), 2)
+        self.assertEqual(Branch.objects.filter(municipality_id=2).count(), 2)
         self.assertEqual(
             BranchBookStock.objects.values("book").distinct().count(),
             Book.objects.count(),
         )
-        self.assertGreaterEqual(BranchBookStock.objects.count(), 20)
+        self.assertGreaterEqual(BranchBookStock.objects.count(), 26)
+        self.assertTrue(
+            BranchBookStock.objects.filter(
+                branch__municipality_id=1, book_id=13
+            ).exists()
+        )
+        self.assertTrue(
+            BranchBookStock.objects.filter(
+                branch__municipality_id=2, book_id=13
+            ).exists()
+        )
         self.assertTrue(Lending.objects.filter(active=True).exists())
+        self.assertTrue(
+            Lending.objects.filter(
+                branch_book_stock__branch__municipality_id=2,
+                active=True,
+            ).exists()
+        )
         self.assertTrue(
             Reservation.objects.filter(status=Reservation.Status.WAITING).exists()
         )
@@ -93,10 +135,14 @@ class BookmanFixtureTest(TransactionTestCase):
             Book.objects.values("isbn").distinct().count(),
             Book.objects.count(),
         )
+        self.assertTrue(Author.objects.filter(name="画面確認用 著者A").exists())
+        self.assertTrue(Category.objects.filter(name="地域資料").exists())
+        self.assertTrue(Book.objects.filter(name="管理画面確認用 地域資料").exists())
         self.assertEqual(
             set(LibraryStaff.objects.values_list("role", flat=True)),
             {"counter", "manager", "admin"},
         )
+        self.assertTrue(SearchCondition.objects.filter(name="目黒区の所蔵").exists())
 
 
 class BookmanApiTest(APITestCase):

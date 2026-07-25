@@ -33,5 +33,19 @@
       "name": "その他",
       "color": "#c0c0c0"
     }
+  },
+  {
+    "model": "bookman.category",
+    "fields": {
+      "name": "地域資料",
+      "color": "#4f8fba"
+    }
+  },
+  {
+    "model": "bookman.category",
+    "fields": {
+      "name": "科学",
+      "color": "#5f9e6e"
+    }
   }
 ]

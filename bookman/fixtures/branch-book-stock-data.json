@@ -229,5 +229,60 @@
       "created_at": "2026-01-01",
       "updated_at": "2026-01-01"
     }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1022,
+    "fields": {
+      "branch": 11,
+      "book": 1,
+      "amount": 4,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1023,
+    "fields": {
+      "branch": 11,
+      "book": 11,
+      "amount": 5,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1024,
+    "fields": {
+      "branch": 12,
+      "book": 12,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1025,
+    "fields": {
+      "branch": 11,
+      "book": 13,
+      "amount": 3,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchbookstock",
+    "pk": 1026,
+    "fields": {
+      "branch": 1,
+      "book": 13,
+      "amount": 2,
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]

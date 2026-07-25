@@ -108,5 +108,29 @@
       "remark": "鉄筋コンクリート造 地上4階の2階部分 361㎡（28席）",
       "created_at": "2022-12-03"
     }
+  },
+  {
+    "model": "bookman.branch",
+    "fields": {
+      "municipality": 2,
+      "name": "目黒中央図書館",
+      "address": "東京都目黒区八雲1-1-1",
+      "phone": "03-5701-2795",
+      "remark": "第二弾 fixture の自治体境界確認用本館",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branch",
+    "fields": {
+      "municipality": 2,
+      "name": "緑が丘図書館",
+      "address": "東京都目黒区緑が丘2-14-23",
+      "phone": "03-3723-0661",
+      "remark": "第二弾 fixture の支店更新確認用分館",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]
