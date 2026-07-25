@@ -224,6 +224,40 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(self.branch.municipality_id, self.municipality.id)
         self.assertEqual(self.second_branch.municipality_id, self.municipality.id)
 
+    def test_municipality_api_deletes_without_branch_relations(self):
+        """
+        シナリオ:
+        - 入力: 支店が紐づいていない自治体。
+        - 処理: 自治体詳細APIへDELETEリクエストする。
+        - 期待値: 204 が返り、自治体が削除されること。
+        """
+        municipality = Municipality.objects.create(name="八戸市")
+
+        response = self.client.delete(f"/bookman/api/municipalities/{municipality.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Municipality.objects.filter(id=municipality.id).exists())
+
+    def test_municipality_api_rejects_delete_with_branch_relations(self):
+        """
+        シナリオ:
+        - 入力: 支店が紐づいている自治体。
+        - 処理: 自治体詳細APIへDELETEリクエストする。
+        - 期待値: 400 が返り、自治体と支店の紐づきが維持されること。
+        """
+        response = self.client.delete(
+            f"/bookman/api/municipalities/{self.municipality.id}/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["municipality"],
+            "支店が紐づく自治体は削除できません。",
+        )
+        self.assertTrue(Municipality.objects.filter(id=self.municipality.id).exists())
+        self.branch.refresh_from_db()
+        self.assertEqual(self.branch.municipality_id, self.municipality.id)
+
     def test_branch_list_returns_frontend_fields(self):
         """
         シナリオ:

@@ -1,4 +1,4 @@
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, Prefetch, ProtectedError, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -93,11 +93,19 @@ class MunicipalityList(generics.ListCreateAPIView):
         return Municipality.objects.order_by("id")
 
 
-class MunicipalityDetail(generics.RetrieveUpdateAPIView):
+class MunicipalityDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = MunicipalitySerializer
 
     def get_queryset(self):
         return Municipality.objects.order_by("id")
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError as exc:
+            raise ValidationError(
+                {"municipality": "支店が紐づく自治体は削除できません。"}
+            ) from exc
 
 
 class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
