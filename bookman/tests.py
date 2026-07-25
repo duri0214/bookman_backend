@@ -818,9 +818,9 @@ class BookmanApiTest(APITestCase):
     def test_book_create_accepts_frontend_payload(self):
         """
         シナリオ:
-        - 入力: フロントエンドと同じ書籍登録ペイロード。
+        - 入力: フロントエンドと同じ書籍登録ペイロードと初期支店別所蔵。
         - 処理: 書籍登録APIへPOSTリクエストする。
-        - 期待値: 書籍が作成され、著者の多対多関連も保存されること。
+        - 期待値: 書籍、著者の多対多関連、初期支店別所蔵が同時に保存されること。
         """
         payload = {
             "name": "銀河鉄道の夜",
@@ -829,6 +829,9 @@ class BookmanApiTest(APITestCase):
             "lead_text": "宮沢賢治の童話です。",
             "isbn": "9780000000002",
             "publication_date": "2026-01-02",
+            "municipality": self.municipality.id,
+            "branch": self.second_branch.id,
+            "amount": 3,
         }
 
         response = self.client.post(
@@ -836,11 +839,19 @@ class BookmanApiTest(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["total_amount"], 0)
+        self.assertEqual(response.data["total_amount"], 3)
+        self.assertEqual(response.data["branch_stocks"][0]["amount"], 3)
         book = Book.objects.get(name="銀河鉄道の夜")
         self.assertEqual(book.category, self.second_category)
         self.assertEqual(
             list(book.authors.values_list("id", flat=True)), [self.second_author.id]
+        )
+        self.assertTrue(
+            BranchBookStock.objects.filter(
+                book=book,
+                branch=self.second_branch,
+                amount=3,
+            ).exists()
         )
 
     def test_book_create_accepts_author_created_by_author_api(self):
@@ -865,6 +876,9 @@ class BookmanApiTest(APITestCase):
                 "lead_text": "短編小説です。",
                 "isbn": "9780000000003",
                 "publication_date": "2026-01-03",
+                "municipality": self.municipality.id,
+                "branch": self.second_branch.id,
+                "amount": 1,
             },
             format="json",
         )
@@ -876,6 +890,103 @@ class BookmanApiTest(APITestCase):
             list(book.authors.values_list("name", flat=True)),
             ["芥川龍之介"],
         )
+
+    def test_book_create_rejects_branch_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 指定自治体とは別自治体に属する支店を含む書籍登録ペイロード。
+        - 処理: 書籍登録APIへPOSTリクエストする。
+        - 期待値: 400 が返り、Book も BranchBookStock も作成されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0002",
+            remark="本館",
+        )
+        payload = {
+            "name": "風の又三郎",
+            "category": self.second_category.id,
+            "authors": [self.second_author.id],
+            "lead_text": "宮沢賢治の短編です。",
+            "isbn": "9780000000004",
+            "publication_date": "2026-01-04",
+            "municipality": self.municipality.id,
+            "branch": other_branch.id,
+            "amount": 2,
+        }
+
+        response = self.client.post(
+            "/bookman/api/books/create/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data,
+            {"branch": ["指定自治体に属する支店を指定してください。"]},
+        )
+        self.assertFalse(Book.objects.filter(name="風の又三郎").exists())
+        self.assertFalse(BranchBookStock.objects.filter(branch=other_branch).exists())
+
+    def test_book_create_rejects_invalid_initial_stock_amount(self):
+        """
+        シナリオ:
+        - 入力: 初期所蔵数が 0 の書籍登録ペイロード。
+        - 処理: 書籍登録APIへPOSTリクエストする。
+        - 期待値: 400 が返り、Book も BranchBookStock も作成されないこと。
+        """
+        payload = {
+            "name": "注文の多い料理店",
+            "category": self.second_category.id,
+            "authors": [self.second_author.id],
+            "lead_text": "童話集です。",
+            "isbn": "9780000000005",
+            "publication_date": "2026-01-05",
+            "municipality": self.municipality.id,
+            "branch": self.second_branch.id,
+            "amount": 0,
+        }
+
+        response = self.client.post(
+            "/bookman/api/books/create/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("amount", response.data)
+        self.assertFalse(Book.objects.filter(name="注文の多い料理店").exists())
+        self.assertFalse(
+            BranchBookStock.objects.filter(
+                branch=self.second_branch,
+                book__name="注文の多い料理店",
+            ).exists()
+        )
+
+    def test_book_create_requires_municipality(self):
+        """
+        シナリオ:
+        - 入力: 自治体を含まない書籍登録ペイロード。
+        - 処理: 書籍登録APIへPOSTリクエストする。
+        - 期待値: 400 が返り、Book も BranchBookStock も作成されないこと。
+        """
+        payload = {
+            "name": "セロ弾きのゴーシュ",
+            "category": self.second_category.id,
+            "authors": [self.second_author.id],
+            "lead_text": "音楽を題材にした童話です。",
+            "isbn": "9780000000006",
+            "publication_date": "2026-01-06",
+            "branch": self.second_branch.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/books/create/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("municipality", response.data)
+        self.assertFalse(Book.objects.filter(name="セロ弾きのゴーシュ").exists())
 
     def test_book_detail_returns_frontend_fields(self):
         """
@@ -2817,6 +2928,9 @@ class BookmanApiTest(APITestCase):
                 "lead_text": "地域資料です。",
                 "isbn": "9780000000004",
                 "publication_date": "2026-01-04",
+                "municipality": self.municipality.id,
+                "branch": self.second_branch.id,
+                "amount": 4,
             },
             format="json",
         )
@@ -2827,7 +2941,9 @@ class BookmanApiTest(APITestCase):
         book = Book.objects.get(name="六戸町史")
         self.assertEqual(book.category.name, "郷土資料")
         self.assertEqual(response.data["category"], category_response.data["id"])
+        self.assertEqual(response.data["total_amount"], 4)
         created_book_data = next(
             book_data for book_data in list_response.data if book_data["id"] == book.id
         )
         self.assertEqual(created_book_data["category"], category_response.data["id"])
+        self.assertEqual(created_book_data["total_amount"], 4)

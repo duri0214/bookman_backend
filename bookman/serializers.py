@@ -5,6 +5,7 @@ serializer は、API レスポンスでは Django model を JSON にできる値
 API リクエストでは JSON の入力値を検証して model に保存できる値へ戻す。
 """
 
+from django.db import transaction
 from rest_framework import serializers
 
 from bookman.exceptions import BusinessRuleApiError
@@ -785,6 +786,17 @@ class BookSerializer(serializers.ModelSerializer):
         allow_empty=False,
         queryset=Author.objects.order_by("id"),
     )
+    municipality = serializers.PrimaryKeyRelatedField(
+        queryset=Municipality.objects.order_by("id"),
+        write_only=True,
+        required=False,
+    )
+    branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.order_by("id"),
+        write_only=True,
+        required=False,
+    )
+    amount = serializers.IntegerField(min_value=1, write_only=True, required=False)
     branch_stocks = serializers.SerializerMethodField()
     total_amount = serializers.SerializerMethodField()
 
@@ -801,6 +813,9 @@ class BookSerializer(serializers.ModelSerializer):
             "branch_stocks",
             "isbn",
             "publication_date",
+            "municipality",
+            "branch",
+            "amount",
         ]
 
     def validate_name(self, value):
@@ -816,6 +831,63 @@ class BookSerializer(serializers.ModelSerializer):
         if duplicate_queryset.exists():
             raise serializers.ValidationError("この書籍名は既に登録されています。")
         return trimmed_value
+
+    def validate(self, attrs):
+        """
+        書籍登録時は初期所蔵支店と冊数を同時に検証する。
+        """
+        attrs = super().validate(attrs)
+        if self.instance is not None:
+            return attrs
+
+        municipality = attrs.get("municipality")
+        branch = attrs.get("branch")
+        errors = {}
+        if municipality is None:
+            errors["municipality"] = "この項目は必須です。"
+        if branch is None:
+            errors["branch"] = "この項目は必須です。"
+        if attrs.get("amount") is None:
+            errors["amount"] = "この項目は必須です。"
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        if (
+            municipality is not None
+            and branch is not None
+            and branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"branch": "指定自治体に属する支店を指定してください。"}
+            )
+
+        selected_municipality = self.context.get("municipality")
+        if (
+            selected_municipality is not None
+            and municipality is not None
+            and municipality.id != selected_municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"municipality": "選択中自治体を指定してください。"}
+            )
+
+        return attrs
+
+    def create(self, validated_data):
+        """
+        書籍本体、著者関連、初期支店別所蔵数を同一トランザクションで作成する。
+        """
+        authors = validated_data.pop("authors")
+        branch = validated_data.pop("branch")
+        amount = validated_data.pop("amount")
+        validated_data.pop("municipality")
+
+        with transaction.atomic():
+            book = Book.objects.create(**validated_data)
+            book.authors.set(authors)
+            BranchBookStock.objects.create(book=book, branch=branch, amount=amount)
+
+        return book
 
     def get_total_amount(self, obj):
         """
