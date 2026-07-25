@@ -91,6 +91,26 @@ class BranchSerializer(serializers.ModelSerializer):
         ]
         validators = []
 
+    def validate(self, attrs):
+        """
+        選択中自治体の支店だけを登録・更新の対象にする。
+        """
+        municipality = self.context.get("municipality")
+        branch_municipality = attrs.get("municipality")
+        if self.instance is not None and branch_municipality is None:
+            branch_municipality = self.instance.municipality
+
+        if (
+            municipality is not None
+            and branch_municipality is not None
+            and branch_municipality.id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"municipality": "選択中自治体を指定してください。"}
+            )
+
+        return attrs
+
 
 class BranchClosedDaySerializer(serializers.ModelSerializer):
     """
@@ -104,6 +124,26 @@ class BranchClosedDaySerializer(serializers.ModelSerializer):
     class Meta:
         model = BranchClosedDay
         fields = ["id", "branch", "branch_name", "date", "reason"]
+
+    def validate(self, attrs):
+        """
+        選択中自治体の支店だけを休館日登録の対象にする。
+        """
+        municipality = self.context.get("municipality")
+        branch = attrs.get("branch")
+        if self.instance is not None and branch is None:
+            branch = self.instance.branch
+
+        if (
+            municipality is not None
+            and branch is not None
+            and branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"branch": "選択中自治体の支店を指定してください。"}
+            )
+
+        return attrs
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -449,6 +489,34 @@ class LendingSerializer(serializers.ModelSerializer):
             and obj.original_return_date != obj.return_date
         )
 
+    def validate(self, attrs):
+        """
+        選択中自治体の所蔵と職員だけを貸出登録の対象にする。
+        """
+        municipality = self.context.get("municipality")
+        stock = attrs.get("branch_book_stock")
+        contact_staff = attrs.get("contact_staff")
+
+        if (
+            municipality is not None
+            and stock is not None
+            and stock.branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"branch_book_stock": "選択中自治体の所蔵を指定してください。"}
+            )
+        if (
+            municipality is not None
+            and contact_staff is not None
+            and contact_staff.branch_id is not None
+            and contact_staff.branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"contact_staff": "選択中自治体の職員を指定してください。"}
+            )
+
+        return attrs
+
     def create(self, validated_data):
         """
         貸出登録の業務処理を実行する。
@@ -518,6 +586,24 @@ class ReservationSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["status", "hold_expires_on", "created_at"]
+
+    def validate(self, attrs):
+        """
+        選択中自治体の所蔵だけを予約登録の対象にする。
+        """
+        municipality = self.context.get("municipality")
+        stock = attrs.get("branch_book_stock")
+
+        if (
+            municipality is not None
+            and stock is not None
+            and stock.branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"branch_book_stock": "選択中自治体の所蔵を指定してください。"}
+            )
+
+        return attrs
 
     def create(self, validated_data):
         """

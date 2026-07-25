@@ -2,6 +2,7 @@ from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
@@ -65,6 +66,29 @@ def has_municipality_query(request):
     return request.query_params.get("municipality") is not None
 
 
+class RequiredMunicipalityMutationMixin:
+    """
+    状態変更APIでは選択中自治体の明示指定を必須にする。
+    """
+
+    def get_required_municipality(self):
+        municipality_id = self.request.query_params.get("municipality")
+        if municipality_id is None:
+            raise ValidationError({"municipality": "自治体を指定してください。"})
+
+        municipality = Municipality.objects.filter(id=municipality_id).first()
+        if municipality is None:
+            raise ValidationError({"municipality": "指定された自治体が存在しません。"})
+
+        return municipality
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.request.method not in SAFE_METHODS:
+            context["municipality"] = self.get_required_municipality()
+        return context
+
+
 class MunicipalityList(generics.ListCreateAPIView):
     serializer_class = MunicipalitySerializer
 
@@ -79,7 +103,7 @@ class MunicipalityDetail(generics.RetrieveUpdateAPIView):
         return Municipality.objects.order_by("id")
 
 
-class BranchList(generics.ListCreateAPIView):
+class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
     serializer_class = BranchSerializer
 
     def get_queryset(self):
@@ -95,15 +119,14 @@ class BranchList(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         municipality = serializer.validated_data.get("municipality")
         if municipality is None:
-            municipality = get_request_municipality(self.request)
-        if municipality is None:
-            raise ValidationError(
-                {"municipality": "登録先の自治体を指定してください。"}
-            )
+            municipality = self.get_required_municipality()
         serializer.save(municipality=municipality)
 
 
-class BranchClosedDayList(generics.ListCreateAPIView):
+class BranchClosedDayList(
+    RequiredMunicipalityMutationMixin,
+    generics.ListCreateAPIView,
+):
     serializer_class = BranchClosedDaySerializer
 
     def get_queryset(self):
@@ -491,7 +514,7 @@ class BranchBookStockTransfer(generics.GenericAPIView):
         )
 
 
-class LendingList(generics.ListCreateAPIView):
+class LendingList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
     serializer_class = LendingSerializer
 
     def get_queryset(self):
@@ -542,7 +565,7 @@ class LendingReturn(generics.GenericAPIView):
         )
 
 
-class ReservationList(generics.ListCreateAPIView):
+class ReservationList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
     serializer_class = ReservationSerializer
 
     def get_queryset(self):

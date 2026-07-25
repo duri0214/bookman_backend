@@ -272,7 +272,11 @@ class BookmanApiTest(APITestCase):
             "remark": "西分館",
         }
 
-        response = self.client.post("/bookman/api/branches/", payload, format="json")
+        response = self.client.post(
+            f"/bookman/api/branches/?municipality={self.municipality.id}",
+            payload,
+            format="json",
+        )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], "西図書館")
@@ -323,7 +327,11 @@ class BookmanApiTest(APITestCase):
             "remark": "別自治体本館",
         }
 
-        response = self.client.post("/bookman/api/branches/", payload, format="json")
+        response = self.client.post(
+            f"/bookman/api/branches/?municipality={self.other_municipality.id}",
+            payload,
+            format="json",
+        )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["municipality"], self.other_municipality.id)
@@ -334,6 +342,53 @@ class BookmanApiTest(APITestCase):
                 name="七戸中央図書館",
             ).exists()
         )
+
+    def test_branch_create_rejects_missing_municipality_query(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない支店登録ペイロード。
+        - 処理: 支店一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で支店が作成されないこと。
+        """
+        payload = {
+            "name": "北図書館",
+            "address": "青森県上北郡六戸町北",
+            "phone": "0176-00-0003",
+            "remark": "北分館",
+        }
+
+        response = self.client.post("/bookman/api/branches/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.assertFalse(Branch.objects.filter(name="北図書館").exists())
+
+    def test_branch_create_rejects_body_municipality_outside_query(self):
+        """
+        シナリオ:
+        - 入力: 選択中自治体とは別の自治体IDを含む支店登録ペイロード。
+        - 処理: 支店一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、選択中自治体外の支店が作成されないこと。
+        """
+        payload = {
+            "municipality": self.other_municipality.id,
+            "name": "七戸北図書館",
+            "address": "青森県上北郡七戸町北",
+            "phone": "0176-00-0011",
+            "remark": "別自治体北分館",
+        }
+
+        response = self.client.post(
+            f"/bookman/api/branches/?municipality={self.municipality.id}",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["municipality"][0], "選択中自治体を指定してください。"
+        )
+        self.assertFalse(Branch.objects.filter(name="七戸北図書館").exists())
 
     def test_legacy_branch_create_endpoint_is_removed(self):
         """
@@ -604,7 +659,7 @@ class BookmanApiTest(APITestCase):
         }
 
         response = self.client.post(
-            "/bookman/api/branch-closed-days/",
+            f"/bookman/api/branch-closed-days/?municipality={self.municipality.id}",
             payload,
             format="json",
         )
@@ -621,6 +676,61 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(list_response.data[0]["reason"], "蔵書点検")
         self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(BranchClosedDay.objects.filter(branch=self.branch).exists())
+
+    def test_branch_closed_day_create_rejects_missing_municipality_query(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない休館日登録ペイロード。
+        - 処理: 休館日APIへPOSTリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で休館日が作成されないこと。
+        """
+        payload = {
+            "branch": self.branch.id,
+            "date": "2026-01-16",
+            "reason": "蔵書点検",
+        }
+
+        response = self.client.post(
+            "/bookman/api/branch-closed-days/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.assertFalse(BranchClosedDay.objects.filter(date="2026-01-16").exists())
+
+    def test_branch_closed_day_create_rejects_branch_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 選択中自治体とは別自治体の支店を指定した休館日登録ペイロード。
+        - 処理: 休館日APIへPOSTリクエストする。
+        - 期待値: 400 が返り、選択中自治体外の休館日が作成されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        payload = {
+            "branch": other_branch.id,
+            "date": "2026-01-16",
+            "reason": "蔵書点検",
+        }
+
+        response = self.client.post(
+            f"/bookman/api/branch-closed-days/?municipality={self.municipality.id}",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["branch"][0], "選択中自治体の支店を指定してください。"
+        )
+        self.assertFalse(BranchClosedDay.objects.filter(branch=other_branch).exists())
 
     def test_book_list_returns_branch_stock_total_amount(self):
         """
@@ -1369,7 +1479,7 @@ class BookmanApiTest(APITestCase):
         - 期待値: 貸出情報が作成され、active が True で返ること。
         """
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1395,6 +1505,71 @@ class BookmanApiTest(APITestCase):
             ).exists()
         )
 
+    def test_lending_create_rejects_missing_municipality_query(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない貸出登録ペイロード。
+        - 処理: 貸出APIへPOSTリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で貸出が作成されないこと。
+        """
+        response = self.client.post(
+            "/bookman/api/lendings/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+                "contact_staff": self.contact_staff.id,
+                "return_date": "2026-01-15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.assertFalse(Lending.objects.exists())
+
+    def test_lending_create_rejects_stock_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 選択中自治体とは別自治体の所蔵と職員を指定した貸出登録ペイロード。
+        - 処理: 貸出APIへPOSTリクエストする。
+        - 期待値: 400 が返り、選択中自治体外の貸出が作成されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_staff = LibraryStaff.objects.create(
+            name="七戸貸出担当者",
+            branch=other_branch,
+            role="counter",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=1,
+        )
+
+        response = self.client.post(
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
+            {
+                "branch_book_stock": other_stock.id,
+                "customer": self.customer.id,
+                "contact_staff": other_staff.id,
+                "return_date": "2026-01-15",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["branch_book_stock"][0],
+            "選択中自治体の所蔵を指定してください。",
+        )
+        self.assertFalse(Lending.objects.exists())
+
     def test_lending_create_adjusts_return_date_for_branch_closed_days(self):
         """
         シナリオ:
@@ -1414,7 +1589,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1449,7 +1624,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1478,7 +1653,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1530,7 +1705,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.other_municipality.id}",
             {
                 "branch_book_stock": other_stock.id,
                 "customer": self.customer.id,
@@ -1563,7 +1738,7 @@ class BookmanApiTest(APITestCase):
             )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": third_customer.id,
@@ -1625,7 +1800,7 @@ class BookmanApiTest(APITestCase):
             )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": third_stock.id,
                 "customer": self.customer.id,
@@ -1666,7 +1841,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/lendings/",
+            f"/bookman/api/lendings/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.second_customer.id,
@@ -1724,7 +1899,7 @@ class BookmanApiTest(APITestCase):
             )
 
         response = self.client.post(
-            "/bookman/api/reservations/",
+            f"/bookman/api/reservations/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": reserve_customer.id,
@@ -1739,6 +1914,62 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
         self.assertEqual(list_response.data[0]["book_name"], "吾輩は猫である")
 
+    def test_reservation_create_rejects_missing_municipality_query(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない予約登録ペイロード。
+        - 処理: 予約一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で予約が作成されないこと。
+        """
+        response = self.client.post(
+            "/bookman/api/reservations/",
+            {
+                "branch_book_stock": self.branch_stock.id,
+                "customer": self.customer.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.assertFalse(Reservation.objects.exists())
+
+    def test_reservation_create_rejects_stock_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 選択中自治体とは別自治体の所蔵を指定した予約登録ペイロード。
+        - 処理: 予約一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、選択中自治体外の予約が作成されないこと。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="七戸中央図書館",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0010",
+            remark="別自治体本館",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=1,
+        )
+
+        response = self.client.post(
+            f"/bookman/api/reservations/?municipality={self.municipality.id}",
+            {
+                "branch_book_stock": other_stock.id,
+                "customer": self.customer.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["branch_book_stock"][0],
+            "選択中自治体の所蔵を指定してください。",
+        )
+        self.assertFalse(Reservation.objects.exists())
+
     def test_reservation_create_rejects_available_stock(self):
         """
         シナリオ:
@@ -1747,7 +1978,7 @@ class BookmanApiTest(APITestCase):
         - 期待値: 貸出可能な本は予約できないコード付きの400が返ること。
         """
         response = self.client.post(
-            "/bookman/api/reservations/",
+            f"/bookman/api/reservations/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1781,7 +2012,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/reservations/",
+            f"/bookman/api/reservations/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1824,7 +2055,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/reservations/",
+            f"/bookman/api/reservations/?municipality={self.municipality.id}",
             {
                 "branch_book_stock": self.branch_stock.id,
                 "customer": self.customer.id,
@@ -1882,7 +2113,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.post(
-            "/bookman/api/reservations/",
+            f"/bookman/api/reservations/?municipality={self.other_municipality.id}",
             {
                 "branch_book_stock": other_stock.id,
                 "customer": self.customer.id,
