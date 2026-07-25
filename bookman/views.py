@@ -424,7 +424,7 @@ class BookCreate(generics.CreateAPIView):
         )
 
 
-class BookDetail(generics.RetrieveAPIView):
+class BookDetail(generics.RetrieveUpdateAPIView):
     serializer_class = BookSerializer
 
     def get_serializer_context(self):

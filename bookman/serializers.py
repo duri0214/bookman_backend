@@ -782,6 +782,7 @@ class BookSerializer(serializers.ModelSerializer):
     )
     authors = serializers.PrimaryKeyRelatedField(
         many=True,
+        allow_empty=False,
         queryset=Author.objects.order_by("id"),
     )
     branch_stocks = serializers.SerializerMethodField()
@@ -801,6 +802,20 @@ class BookSerializer(serializers.ModelSerializer):
             "isbn",
             "publication_date",
         ]
+
+    def validate_name(self, value):
+        """
+        書籍名は前後の空白を除いた値で保存し、重複を拒否する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        duplicate_queryset = Book.objects.filter(name=trimmed_value)
+        if self.instance is not None:
+            duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+        if duplicate_queryset.exists():
+            raise serializers.ValidationError("この書籍名は既に登録されています。")
+        return trimmed_value
 
     def get_total_amount(self, obj):
         """
