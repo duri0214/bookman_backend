@@ -1,7 +1,7 @@
 from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
@@ -65,7 +65,14 @@ def has_municipality_query(request):
     return request.query_params.get("municipality") is not None
 
 
-class MunicipalityList(generics.ListAPIView):
+class MunicipalityList(generics.ListCreateAPIView):
+    serializer_class = MunicipalitySerializer
+
+    def get_queryset(self):
+        return Municipality.objects.order_by("id")
+
+
+class MunicipalityDetail(generics.RetrieveUpdateAPIView):
     serializer_class = MunicipalitySerializer
 
     def get_queryset(self):
@@ -89,6 +96,10 @@ class BranchList(generics.ListCreateAPIView):
         municipality = serializer.validated_data.get("municipality")
         if municipality is None:
             municipality = get_request_municipality(self.request)
+        if municipality is None:
+            raise ValidationError(
+                {"municipality": "登録先の自治体を指定してください。"}
+            )
         serializer.save(municipality=municipality)
 
 

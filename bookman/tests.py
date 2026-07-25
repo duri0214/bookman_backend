@@ -144,6 +144,84 @@ class BookmanApiTest(APITestCase):
             },
         )
 
+    def test_municipality_api_create_list_retrieve_and_update(self):
+        """
+        シナリオ:
+        - 入力: 既存自治体と、新規自治体登録・名称変更ペイロード。
+        - 処理: 自治体APIへPOST、GET、PATCHを順に実行する。
+        - 期待値: 自治体を追加・確認・更新でき、フロントエンド向けの選択肢フィールドが返ること。
+        """
+        create_response = self.client.post(
+            "/bookman/api/municipalities/",
+            {"name": "八戸市"},
+            format="json",
+        )
+        list_response = self.client.get("/bookman/api/municipalities/")
+        detail_response = self.client.get(
+            f"/bookman/api/municipalities/{create_response.data['id']}/"
+        )
+        update_response = self.client.patch(
+            f"/bookman/api/municipalities/{create_response.data['id']}/",
+            {"name": "八戸市立"},
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data["name"], "八戸市")
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            list(list_response.data[-1].keys()),
+            ["id", "name"],
+        )
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.data["name"], "八戸市")
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["name"], "八戸市立")
+        self.assertTrue(Municipality.objects.filter(name="八戸市立").exists())
+
+    def test_municipality_api_rejects_duplicate_and_blank_name(self):
+        """
+        シナリオ:
+        - 入力: 既存自治体と同じ名称、空白だけの自治体名。
+        - 処理: 自治体APIへPOSTする。
+        - 期待値: 重複名と空値は400で拒否され、自治体が増えないこと。
+        """
+        municipality_count = Municipality.objects.count()
+
+        duplicate_response = self.client.post(
+            "/bookman/api/municipalities/",
+            {"name": self.municipality.name},
+            format="json",
+        )
+        blank_response = self.client.post(
+            "/bookman/api/municipalities/",
+            {"name": "   "},
+            format="json",
+        )
+
+        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(blank_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Municipality.objects.count(), municipality_count)
+
+    def test_municipality_update_keeps_existing_branch_relations(self):
+        """
+        シナリオ:
+        - 入力: 支店を持つ自治体と自治体名称変更ペイロード。
+        - 処理: 自治体詳細APIへPATCHする。
+        - 期待値: 名称だけが更新され、既存支店の自治体紐づきは維持されること。
+        """
+        response = self.client.patch(
+            f"/bookman/api/municipalities/{self.municipality.id}/",
+            {"name": "六戸町立"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.branch.refresh_from_db()
+        self.second_branch.refresh_from_db()
+        self.assertEqual(self.branch.municipality_id, self.municipality.id)
+        self.assertEqual(self.second_branch.municipality_id, self.municipality.id)
+
     def test_branch_list_returns_frontend_fields(self):
         """
         シナリオ:
@@ -227,6 +305,33 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["id"], other_branch.id)
         self.assertEqual(response.data[0]["municipality"], self.other_municipality.id)
+
+    def test_branch_create_accepts_explicit_municipality(self):
+        """
+        シナリオ:
+        - 入力: 既定自治体とは別の自治体IDを指定した支店登録ペイロード。
+        - 処理: 支店一覧APIへPOSTリクエストする。
+        - 期待値: 指定自治体に支店が作成され、レスポンスにも自治体名が返ること。
+        """
+        payload = {
+            "municipality": self.other_municipality.id,
+            "name": "七戸中央図書館",
+            "address": "青森県上北郡七戸町",
+            "phone": "0176-00-0010",
+            "remark": "別自治体本館",
+        }
+
+        response = self.client.post("/bookman/api/branches/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["municipality"], self.other_municipality.id)
+        self.assertEqual(response.data["municipality_name"], "七戸町")
+        self.assertTrue(
+            Branch.objects.filter(
+                municipality=self.other_municipality,
+                name="七戸中央図書館",
+            ).exists()
+        )
 
     def test_legacy_branch_create_endpoint_is_removed(self):
         """
