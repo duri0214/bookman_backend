@@ -53,7 +53,9 @@ class BookmanFixtureTest(TransactionTestCase):
         for fixture_path in fixture_paths:
             call_command("loaddata", fixture_path, verbosity=0)
 
-        stock_response = self.client.get("/bookman/api/branch-book-stocks/")
+        stock_response = self.client.get(
+            "/bookman/api/branch-book-stocks/?municipality=1"
+        )
         lending_response = self.client.get("/bookman/api/lendings/")
         reservation_response = self.client.get("/bookman/api/reservations/")
         staff_response = self.client.get("/bookman/api/staff/")
@@ -753,7 +755,9 @@ class BookmanApiTest(APITestCase):
         - 処理: 所蔵数一覧APIへGETリクエストする。
         - 期待値: 支店ID、書籍ID、支店別数量が返り、書籍の総数量と区別できること。
         """
-        response = self.client.get("/bookman/api/branch-book-stocks/")
+        response = self.client.get(
+            f"/bookman/api/branch-book-stocks/?municipality={self.municipality.id}"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["branch"], self.branch.id)
@@ -766,7 +770,7 @@ class BookmanApiTest(APITestCase):
     def test_branch_book_stock_list_matches_book_detail_scope(self):
         """
         シナリオ:
-        - 入力: 同じ書籍が既定自治体と別自治体の支店に所蔵されている状態。
+        - 入力: 同じ書籍が選択自治体と別自治体の支店に所蔵されている状態。
         - 処理: 別自治体を指定して所蔵数一覧APIと書籍詳細APIへGETリクエストする。
         - 期待値: どちらのAPIも同じ自治体境界の支店別所蔵だけを返すこと。
         """
@@ -800,6 +804,18 @@ class BookmanApiTest(APITestCase):
             [other_stock.id],
         )
 
+    def test_branch_book_stock_list_rejects_missing_municipality(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない所蔵数一覧リクエスト。
+        - 処理: 所蔵数一覧APIへGETリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で所蔵数一覧を返さないこと。
+        """
+        response = self.client.get("/bookman/api/branch-book-stocks/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+
     def test_branch_book_stock_list_returns_available_amount(self):
         """
         シナリオ:
@@ -814,7 +830,9 @@ class BookmanApiTest(APITestCase):
             return_date=date(2026, 1, 15),
         )
 
-        response = self.client.get("/bookman/api/branch-book-stocks/")
+        response = self.client.get(
+            f"/bookman/api/branch-book-stocks/?municipality={self.municipality.id}"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["amount"], 2)
@@ -834,7 +852,9 @@ class BookmanApiTest(APITestCase):
         }
 
         response = self.client.post(
-            "/bookman/api/branch-book-stocks/", payload, format="json"
+            f"/bookman/api/branch-book-stocks/?municipality={self.municipality.id}",
+            payload,
+            format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -846,11 +866,36 @@ class BookmanApiTest(APITestCase):
         detail_response = self.client.get(f"/bookman/api/books/{self.book.id}/")
         self.assertEqual(detail_response.data["total_amount"], 3)
 
+    def test_branch_book_stock_create_rejects_missing_municipality(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない所蔵登録ペイロード。
+        - 処理: 所蔵数一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で所蔵が作成されないこと。
+        """
+        payload = {
+            "branch": self.second_branch.id,
+            "book": self.book.id,
+            "amount": 1,
+        }
+
+        response = self.client.post(
+            "/bookman/api/branch-book-stocks/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.assertFalse(
+            BranchBookStock.objects.filter(
+                branch=self.second_branch, book=self.book
+            ).exists()
+        )
+
     def test_branch_book_stock_create_rejects_branch_outside_municipality(self):
         """
         シナリオ:
         - 入力: 別自治体に属する支店を指定した所蔵登録ペイロード。
-        - 処理: 既定自治体スコープの所蔵数一覧APIへPOSTリクエストする。
+        - 処理: 自治体を指定して所蔵数一覧APIへPOSTリクエストする。
         - 期待値: 400 が返り、自治体外支店の所蔵が作成されないこと。
         """
         other_branch = Branch.objects.create(
@@ -867,7 +912,9 @@ class BookmanApiTest(APITestCase):
         }
 
         response = self.client.post(
-            "/bookman/api/branch-book-stocks/", payload, format="json"
+            f"/bookman/api/branch-book-stocks/?municipality={self.municipality.id}",
+            payload,
+            format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -892,7 +939,9 @@ class BookmanApiTest(APITestCase):
         }
 
         response = self.client.post(
-            "/bookman/api/branch-book-stocks/", payload, format="json"
+            f"/bookman/api/branch-book-stocks/?municipality={self.municipality.id}",
+            payload,
+            format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -913,7 +962,7 @@ class BookmanApiTest(APITestCase):
         - 期待値: 対象 BranchBookStock の数量だけが更新されること。
         """
         response = self.client.patch(
-            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/",
+            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/?municipality={self.municipality.id}",
             {"amount": 3},
             format="json",
         )
@@ -926,7 +975,7 @@ class BookmanApiTest(APITestCase):
         """
         シナリオ:
         - 入力: 登録済みの支店別所蔵数と、別自治体に属する更新先支店。
-        - 処理: 既定自治体スコープの所蔵数詳細APIへPATCHリクエストする。
+        - 処理: 自治体を指定して所蔵数詳細APIへPATCHリクエストする。
         - 期待値: 400 が返り、BranchBookStock の支店が変更されないこと。
         """
         other_branch = Branch.objects.create(
@@ -938,7 +987,7 @@ class BookmanApiTest(APITestCase):
         )
 
         response = self.client.patch(
-            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/",
+            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/?municipality={self.municipality.id}",
             {"branch": other_branch.id},
             format="json",
         )
@@ -949,6 +998,24 @@ class BookmanApiTest(APITestCase):
         )
         self.branch_stock.refresh_from_db()
         self.assertEqual(self.branch_stock.branch, self.branch)
+
+    def test_branch_book_stock_detail_rejects_missing_municipality(self):
+        """
+        シナリオ:
+        - 入力: municipality query parameter を指定しない所蔵数詳細リクエスト。
+        - 処理: 所蔵数詳細APIへPATCHリクエストする。
+        - 期待値: 400 が返り、暗黙の自治体選択で所蔵が更新されないこと。
+        """
+        response = self.client.patch(
+            f"/bookman/api/branch-book-stocks/{self.branch_stock.id}/",
+            {"amount": 3},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["municipality"], "自治体を指定してください。")
+        self.branch_stock.refresh_from_db()
+        self.assertEqual(self.branch_stock.amount, 2)
 
     def test_branch_book_stock_transfer_creates_destination_stock(self):
         """
@@ -1897,7 +1964,9 @@ class BookmanApiTest(APITestCase):
             hold_expires_on=date(2026, 1, 22),
         )
 
-        response = self.client.get("/bookman/api/branch-book-stocks/")
+        response = self.client.get(
+            f"/bookman/api/branch-book-stocks/?municipality={self.municipality.id}"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data[0]["available_amount"], 0)

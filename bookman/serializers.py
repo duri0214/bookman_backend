@@ -303,11 +303,6 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
         選択中自治体の支店だけを所蔵数登録・更新の対象にする。
         """
         municipality = self.context.get("municipality")
-        has_municipality_query = self.context.get("has_municipality_query", False)
-        if municipality is None and has_municipality_query:
-            raise serializers.ValidationError(
-                {"municipality": "指定された自治体が存在しません。"}
-            )
 
         branch = attrs.get("branch")
         book = attrs.get("book")
