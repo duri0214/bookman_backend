@@ -5,6 +5,8 @@ serializer は、API レスポンスでは Django model を JSON にできる値
 API リクエストでは JSON の入力値を検証して model に保存できる値へ戻す。
 """
 
+import re
+
 from django.db import transaction
 from django.db.models import Sum
 from rest_framework import serializers
@@ -42,6 +44,8 @@ from bookman.models import (
     Reservation,
     SearchCondition,
 )
+
+PHONE_NUMBER_PATTERN = re.compile(r"^\d{2,5}-\d{1,4}-\d{4}$")
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -180,11 +184,19 @@ class BranchSerializer(serializers.ModelSerializer):
 
     def validate_phone(self, value):
         """
-        支店電話番号は前後の空白を除いた値で保存する。
+        支店電話番号は前後の空白を除き、国内電話番号のハイフン区切り形式で保存する。
         """
         trimmed_value = value.strip()
         if not trimmed_value:
             raise serializers.ValidationError("この項目は空にできません。")
+        digit_count = sum(character.isdigit() for character in trimmed_value)
+        if not PHONE_NUMBER_PATTERN.fullmatch(trimmed_value) or digit_count not in [
+            10,
+            11,
+        ]:
+            raise serializers.ValidationError(
+                "電話番号は 03-3403-2591 または 090-0000-0000 の形式で入力してください。"
+            )
         return trimmed_value
 
     def validate_remark(self, value):

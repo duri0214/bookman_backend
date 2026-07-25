@@ -384,6 +384,33 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data["remark"], "")
         self.assertTrue(Branch.objects.filter(name="南図書館", remark="").exists())
 
+    def test_branch_create_rejects_too_long_phone_number(self):
+        """
+        シナリオ:
+        - 入力: 下4桁が過剰な支店電話番号を含む支店登録ペイロード。
+        - 処理: 支店一覧APIへPOSTリクエストする。
+        - 期待値: 400 が返り、不正な電話番号の支店が作成されないこと。
+        """
+        payload = {
+            "name": "長電話番号図書館",
+            "address": "東京都渋谷区広尾",
+            "phone": "03-3403-259111",
+            "remark": "不正電話番号",
+        }
+
+        response = self.client.post(
+            f"/bookman/api/branches/?municipality={self.municipality.id}",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["phone"][0],
+            "電話番号は 03-3403-2591 または 090-0000-0000 の形式で入力してください。",
+        )
+        self.assertFalse(Branch.objects.filter(name="長電話番号図書館").exists())
+
     def test_branch_detail_updates_master_fields(self):
         """
         シナリオ:
@@ -408,6 +435,27 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(self.branch.address, "青森県上北郡六戸町中央")
         self.assertEqual(self.branch.phone, "0176-00-0099")
         self.assertEqual(self.branch.remark, "")
+
+    def test_branch_update_rejects_too_long_phone_number(self):
+        """
+        シナリオ:
+        - 入力: 下4桁が過剰な電話番号への支店更新ペイロード。
+        - 処理: 支店詳細APIへPATCHリクエストする。
+        - 期待値: 400 が返り、既存支店の電話番号が更新されないこと。
+        """
+        response = self.client.patch(
+            f"/bookman/api/branches/{self.branch.id}/?municipality={self.municipality.id}",
+            {"phone": "03-3403-259111"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["phone"][0],
+            "電話番号は 03-3403-2591 または 090-0000-0000 の形式で入力してください。",
+        )
+        self.branch.refresh_from_db()
+        self.assertEqual(self.branch.phone, "0176-00-0000")
 
     def test_branch_detail_updates_municipality_and_keeps_relations(self):
         """
