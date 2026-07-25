@@ -15,6 +15,11 @@ urlpatterns = [
     ),
     path("api/branches/", views.BranchList.as_view(), name="branch_list"),
     path(
+        "api/branches/<int:pk>/",
+        views.BranchDetail.as_view(),
+        name="branch_detail",
+    ),
+    path(
         "api/branch-closed-days/",
         views.BranchClosedDayList.as_view(),
         name="branch_closed_day_list",

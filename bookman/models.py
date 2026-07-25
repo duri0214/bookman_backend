@@ -323,7 +323,7 @@ class Branch(models.Model):
         name: 支店名。
         address: 所在地。
         phone: 電話番号。
-        remark: 補足情報。
+        remark: 補足情報。任意入力。
         created_at: 登録日。
         updated_at: 更新日。
     """
@@ -337,7 +337,7 @@ class Branch(models.Model):
     name = models.CharField(max_length=255)
     address = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
-    remark = models.CharField(max_length=255)
+    remark = models.CharField(max_length=255, blank=True)
     created_at = models.DateField(auto_now_add=True)
     updated_at = models.DateField(auto_now=True, null=True)
 
