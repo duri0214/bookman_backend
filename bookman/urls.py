@@ -92,4 +92,9 @@ urlpatterns = [
         name="author_detail",
     ),
     path("api/categories/", views.CategoryList.as_view(), name="category_list"),
+    path(
+        "api/categories/<int:pk>/",
+        views.CategoryDetail.as_view(),
+        name="category_detail",
+    ),
 ]

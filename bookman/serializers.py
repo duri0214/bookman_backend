@@ -47,6 +47,39 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ["id", "name", "color"]
 
+    def validate_name(self, value):
+        """
+        カテゴリ名は前後の空白を除いた値で保存する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        duplicate_queryset = Category.objects.filter(name=trimmed_value)
+        if self.instance is not None:
+            duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+        if duplicate_queryset.exists():
+            raise serializers.ValidationError("このカテゴリ名は既に登録されています。")
+        return trimmed_value
+
+    def validate_color(self, value):
+        """
+        色コードは # から始まる6桁の16進数で保存する。
+        """
+        if not value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        if len(value) != 7 or not value.startswith("#"):
+            raise serializers.ValidationError(
+                "#から始まる6桁の16進数を指定してください。"
+            )
+
+        hex_digits = value[1:]
+        if not all(character in "0123456789abcdefABCDEF" for character in hex_digits):
+            raise serializers.ValidationError(
+                "#から始まる6桁の16進数を指定してください。"
+            )
+
+        return value.lower()
+
 
 class AuthorSerializer(serializers.ModelSerializer):
     class Meta:
