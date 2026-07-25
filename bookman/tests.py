@@ -584,6 +584,36 @@ class BookmanApiTest(APITestCase):
         )
         self.assertFalse(Branch.objects.filter(name="七戸北図書館").exists())
 
+    def test_branch_detail_updates_branch_fields(self):
+        """
+        シナリオ:
+        - 入力: 既存支店と、支店名・住所・電話番号・備考の更新ペイロード。
+        - 処理: 支店詳細APIへPATCHリクエストする。
+        - 期待値: 指定支店が更新され、レスポンスに更新後の支店フィールドが返ること。
+        """
+        payload = {
+            "municipality": self.municipality.id,
+            "name": "中央図書館本館",
+            "address": "青森県上北郡六戸町中央",
+            "phone": "0176-00-0100",
+            "remark": "本館更新",
+        }
+
+        response = self.client.patch(
+            f"/bookman/api/branches/{self.branch.id}/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "中央図書館本館")
+        self.assertEqual(response.data["municipality"], self.municipality.id)
+        self.branch.refresh_from_db()
+        self.assertEqual(self.branch.name, "中央図書館本館")
+        self.assertEqual(self.branch.address, "青森県上北郡六戸町中央")
+        self.assertEqual(self.branch.phone, "0176-00-0100")
+        self.assertEqual(self.branch.remark, "本館更新")
+
     def test_legacy_branch_create_endpoint_is_removed(self):
         """
         シナリオ:
