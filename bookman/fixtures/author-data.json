@@ -10,5 +10,17 @@
     "fields": {
       "name": "熊谷聡"
     }
+  },
+  {
+    "model": "bookman.author",
+    "fields": {
+      "name": "画面確認用 著者A"
+    }
+  },
+  {
+    "model": "bookman.author",
+    "fields": {
+      "name": "画面確認用 著者B"
+    }
   }
 ]

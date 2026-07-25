@@ -128,5 +128,47 @@
       "publication_date": "1999-11-11",
       "created_at": "2022-12-03"
     }
+  },
+  {
+    "model": "bookman.book",
+    "pk": 11,
+    "fields": {
+      "name": "管理画面確認用 地域資料",
+      "category": 6,
+      "authors": [3],
+      "lead_text": "自治体別の所蔵集計と書籍マスタ更新を確認するための地域資料です。",
+      "isbn": "9784000000011",
+      "publication_date": "2026-01-11",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.book",
+    "pk": 12,
+    "fields": {
+      "name": "管理画面確認用 科学入門",
+      "category": 7,
+      "authors": [4],
+      "lead_text": "カテゴリ、著者、書籍の一覧・更新後表示を確認するための科学入門書です。",
+      "isbn": "9784000000012",
+      "publication_date": "2026-01-12",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.book",
+    "pk": 13,
+    "fields": {
+      "name": "自治体境界確認用 共通所蔵本",
+      "category": 6,
+      "authors": [3, 4],
+      "lead_text": "同じ書籍が複数自治体に所蔵されても、選択自治体ごとに集計が分離されることを確認する本です。",
+      "isbn": "9784000000013",
+      "publication_date": "2026-01-13",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]

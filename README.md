@@ -116,6 +116,32 @@ python manage.py loaddata bookman/fixtures/search-condition-data.json
 - 予約待ち、取り置き中、期限注意、期限切れ、取消済みの予約データ
 - 複数支店の `counter` / `manager` / `admin` 職員と保存済み検索条件
 
+第二弾 fixture では、管理 API と複数自治体境界の最終確認用に以下のデータを追加しています。
+
+- 自治体マスタ: `目黒区`
+- 支店マスタ: `目黒中央図書館`、`緑が丘図書館`
+- 著者マスタ: `画面確認用 著者A`、`画面確認用 著者B`
+- カテゴリマスタ: `地域資料`、`科学`
+- 書籍マスタ: `管理画面確認用 地域資料`、`管理画面確認用 科学入門`、`自治体境界確認用 共通所蔵本`
+- 目黒区側の職員、利用者、休館日、貸出中、取り置き中予約、保存済み検索条件
+
+代表確認シナリオは以下です。
+
+```console
+curl "http://127.0.0.1:8000/bookman/api/municipalities/"
+curl "http://127.0.0.1:8000/bookman/api/branches/?municipality=2"
+curl "http://127.0.0.1:8000/bookman/api/books/?municipality=1"
+curl "http://127.0.0.1:8000/bookman/api/books/?municipality=2"
+curl "http://127.0.0.1:8000/bookman/api/branch-book-stocks/?municipality=2"
+curl "http://127.0.0.1:8000/bookman/api/staff/?municipality=2"
+curl "http://127.0.0.1:8000/bookman/api/lendings/?municipality=2"
+curl "http://127.0.0.1:8000/bookman/api/reservations/?municipality=2"
+curl "http://127.0.0.1:8000/bookman/api/authors/"
+curl "http://127.0.0.1:8000/bookman/api/categories/"
+```
+
+`自治体境界確認用 共通所蔵本` は渋谷区と目黒区の両方に所蔵を持ちます。`municipality=1` と `municipality=2` で書籍一覧を見比べ、`total_amount` と `branch_stocks` が選択自治体の支店だけで集計されることを確認してください。
+
 ## サーバーの起動
 
 Bookman はフロントエンドとバックエンドを両方起動して動かします。

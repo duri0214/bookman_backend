@@ -31,5 +31,16 @@
       "created_at": "2026-01-01",
       "updated_at": "2026-01-01"
     }
+  },
+  {
+    "model": "bookman.branchclosedday",
+    "pk": 1004,
+    "fields": {
+      "branch": 11,
+      "date": "2026-08-20",
+      "reason": "目黒区蔵書点検",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
   }
 ]
