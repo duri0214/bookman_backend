@@ -8,14 +8,18 @@ from bookman.domain.repository import (
     LendingRepository,
     ReservationRepository,
 )
-from bookman.domain.valueobject import BranchBookStockTransfer, LendingReturn
+from bookman.domain.valueobject import (
+    BranchBookStockTransfer,
+    BranchBookStockTransferInput,
+    BranchBookStockValidationInput,
+    LendingRegistrationInput,
+    LendingReturn,
+    ReservationRegistrationInput,
+)
 from bookman.models import (
-    Book,
     Branch,
     BranchBookStock,
-    Customer,
     Lending,
-    LibraryStaff,
     Reservation,
 )
 
@@ -35,6 +39,24 @@ class SourceStockNotFoundError(BranchBookStockTransferError):
 class InsufficientStockError(BranchBookStockTransferError):
     """
     移動元支店の所蔵数が移動冊数に満たない場合の例外。
+    """
+
+
+class DuplicateBranchBookStockError(BranchBookStockTransferError):
+    """
+    同じ支店と書籍の所蔵が既に登録されている場合の例外。
+    """
+
+
+class BranchBookStockMunicipalityMismatchError(BranchBookStockTransferError):
+    """
+    選択中自治体に属さない支店別所蔵を扱おうとした場合の例外。
+    """
+
+
+class SameBranchTransferError(BranchBookStockTransferError):
+    """
+    同一支店へ所蔵を移動しようとした場合の例外。
     """
 
 
@@ -65,6 +87,24 @@ class LendingStockUnavailableError(LendingRuleError):
 class CustomerLendingLimitExceededError(LendingRuleError):
     """
     利用者の貸出上限冊数に達している場合の例外。
+    """
+
+
+class LendingMunicipalityMismatchError(LendingRuleError):
+    """
+    選択中自治体に属さない所蔵または職員で貸出登録しようとした場合の例外。
+    """
+
+
+class ContactStaffBranchRequiredError(LendingRuleError):
+    """
+    貸出対応職員に所属支店がない場合の例外。
+    """
+
+
+class ContactStaffMunicipalityMismatchError(LendingRuleError):
+    """
+    貸出対象所蔵と対応職員の自治体が一致しない場合の例外。
     """
 
 
@@ -104,6 +144,12 @@ class DuplicateBookReservationError(ReservationRuleError):
     """
 
 
+class ReservationMunicipalityMismatchError(ReservationRuleError):
+    """
+    選択中自治体に属さない所蔵へ予約登録しようとした場合の例外。
+    """
+
+
 class ReservationNotFoundError(ReservationRuleError):
     """
     取消対象の予約情報が存在しない場合の例外。
@@ -118,41 +164,75 @@ class ReservationNotCancelableError(ReservationRuleError):
 
 class BranchBookStockTransferService:
     """
-    支店間で本を移動する業務処理。
+    支店別所蔵の登録前検証と支店間移動の業務処理。
     """
 
     def __init__(self, repository: BranchBookStockRepository | None = None):
         self.repository = repository or BranchBookStockRepository()
 
+    def validate_stock_registration(
+        self,
+        stock_input: BranchBookStockValidationInput,
+    ) -> None:
+        """
+        支店別所蔵の自治体スコープと支店・書籍の重複を検証する。
+        """
+        if (
+            stock_input.selected_municipality is not None
+            and stock_input.branch.municipality_id
+            != stock_input.selected_municipality.id
+        ):
+            raise BranchBookStockMunicipalityMismatchError
+
+        if self.repository.exists_by_branch_and_book(
+            branch=stock_input.branch,
+            book=stock_input.book,
+            exclude_stock=stock_input.current_stock,
+        ):
+            raise DuplicateBranchBookStockError
+
+    def validate_transfer_request(
+        self,
+        transfer_input: BranchBookStockTransferInput,
+    ) -> None:
+        """
+        支店間移動の移動先と自治体境界を検証する。
+        """
+        if transfer_input.from_branch == transfer_input.to_branch:
+            raise SameBranchTransferError
+        if (
+            transfer_input.from_branch.municipality_id
+            != transfer_input.to_branch.municipality_id
+        ):
+            raise CrossMunicipalityTransferError
+
     def transfer(
         self,
-        *,
-        book: Book,
-        from_branch: Branch,
-        to_branch: Branch,
-        amount: int,
+        transfer_input: BranchBookStockTransferInput,
     ) -> BranchBookStockTransfer:
         """
         移動元の所蔵数を減らし、移動先の所蔵数を増やす。
         """
-        if from_branch.municipality_id != to_branch.municipality_id:
-            raise CrossMunicipalityTransferError
+        self.validate_transfer_request(transfer_input)
 
         with transaction.atomic():
-            source_stock = self.repository.get_for_update(book, from_branch)
+            source_stock = self.repository.get_for_update(
+                transfer_input.book,
+                transfer_input.from_branch,
+            )
             if source_stock is None:
                 raise SourceStockNotFoundError
 
-            if source_stock.amount < amount:
+            if source_stock.amount < transfer_input.amount:
                 raise InsufficientStockError
 
             destination_stock, created = self.repository.get_or_create_for_update(
-                book,
-                to_branch,
+                transfer_input.book,
+                transfer_input.to_branch,
             )
 
-            source_stock.amount -= amount
-            destination_stock.amount += amount
+            source_stock.amount -= transfer_input.amount
+            destination_stock.amount += transfer_input.amount
 
             if created:
                 self.repository.save(source_stock)
@@ -161,10 +241,10 @@ class BranchBookStockTransferService:
                 self.repository.bulk_save([source_stock, destination_stock])
 
         return BranchBookStockTransfer(
-            book=book,
-            from_branch=from_branch,
-            to_branch=to_branch,
-            amount=amount,
+            book=transfer_input.book,
+            from_branch=transfer_input.from_branch,
+            to_branch=transfer_input.to_branch,
+            amount=transfer_input.amount,
             source_stock=source_stock,
             destination_stock=destination_stock,
         )
@@ -189,28 +269,50 @@ class LendingService:
         self.lending_repository = lending_repository or LendingRepository()
         self.reservation_repository = reservation_repository or ReservationRepository()
 
-    def lend(
+    def validate_registration(
         self,
-        *,
-        branch_book_stock: BranchBookStock,
-        customer: Customer,
-        contact_staff: LibraryStaff,
-        return_date,
-    ) -> Lending:
+        lending_input: LendingRegistrationInput,
+    ) -> None:
+        """
+        貸出対象の自治体スコープと対応職員の所属条件を検証する。
+        """
+        selected_municipality = lending_input.selected_municipality
+        stock = lending_input.branch_book_stock
+        contact_staff = lending_input.contact_staff
+
+        if (
+            selected_municipality is not None
+            and stock.branch.municipality_id != selected_municipality.id
+        ):
+            raise LendingMunicipalityMismatchError("branch_book_stock")
+        if (
+            selected_municipality is not None
+            and contact_staff.branch_id is not None
+            and contact_staff.branch.municipality_id != selected_municipality.id
+        ):
+            raise LendingMunicipalityMismatchError("contact_staff")
+        if contact_staff.branch_id is None:
+            raise ContactStaffBranchRequiredError
+        if contact_staff.branch.municipality_id != stock.branch.municipality_id:
+            raise ContactStaffMunicipalityMismatchError
+
+    def lend(self, lending_input: LendingRegistrationInput) -> Lending:
         """
         貸出可能冊数と利用者別ルールを確認して貸出情報を作成する。
         """
+        self.validate_registration(lending_input)
+
         with transaction.atomic():
             stock = self.stock_repository.get_for_update(
-                branch_book_stock.book,
-                branch_book_stock.branch,
+                lending_input.branch_book_stock.book,
+                lending_input.branch_book_stock.branch,
             )
             if stock is None:
                 raise LendingStockUnavailableError
 
             municipality_id = stock.branch.municipality_id
             if self.lending_repository.exists_active_book_by_customer_in_municipality(
-                customer=customer,
+                customer=lending_input.customer,
                 book=stock.book,
                 municipality_id=municipality_id,
             ):
@@ -219,7 +321,7 @@ class LendingService:
             held_reservation = (
                 self.reservation_repository.get_held_by_customer_for_update(
                     stock=stock,
-                    customer=customer,
+                    customer=lending_input.customer,
                 )
             )
             active_stock_count = self.lending_repository.count_active_by_stock(stock)
@@ -230,21 +332,21 @@ class LendingService:
                 raise LendingStockUnavailableError
 
             active_customer_count = self.lending_repository.count_active_by_customer(
-                customer
+                lending_input.customer
             )
-            if active_customer_count >= customer.max_lending_count:
+            if active_customer_count >= lending_input.customer.max_lending_count:
                 raise CustomerLendingLimitExceededError
 
             adjusted_return_date, adjustment_reason = self._adjust_return_date(
                 branch=stock.branch,
-                return_date=return_date,
+                return_date=lending_input.return_date,
             )
             lending = self.lending_repository.create(
                 stock=stock,
-                customer=customer,
-                contact_staff=contact_staff,
+                customer=lending_input.customer,
+                contact_staff=lending_input.contact_staff,
                 return_date=adjusted_return_date,
-                original_return_date=return_date,
+                original_return_date=lending_input.return_date,
                 return_date_adjustment_reason=adjustment_reason,
             )
             if held_reservation is not None:
@@ -325,32 +427,43 @@ class ReservationService:
         self.lending_repository = lending_repository or LendingRepository()
         self.reservation_repository = reservation_repository or ReservationRepository()
 
-    def reserve(
+    def validate_registration(
         self,
-        *,
-        branch_book_stock: BranchBookStock,
-        customer: Customer,
-    ) -> Reservation:
+        reservation_input: ReservationRegistrationInput,
+    ) -> None:
+        """
+        予約対象の自治体スコープを検証する。
+        """
+        if (
+            reservation_input.selected_municipality is not None
+            and reservation_input.branch_book_stock.branch.municipality_id
+            != reservation_input.selected_municipality.id
+        ):
+            raise ReservationMunicipalityMismatchError
+
+    def reserve(self, reservation_input: ReservationRegistrationInput) -> Reservation:
         """
         貸出可能冊数がない支店別所蔵へ予約待ちを登録する。
         """
+        self.validate_registration(reservation_input)
+
         with transaction.atomic():
             stock = self.stock_repository.get_for_update(
-                branch_book_stock.book,
-                branch_book_stock.branch,
+                reservation_input.branch_book_stock.book,
+                reservation_input.branch_book_stock.branch,
             )
             if stock is None:
                 raise LendingStockUnavailableError
 
             if self.reservation_repository.exists_open_by_customer_and_stock(
                 stock=stock,
-                customer=customer,
+                customer=reservation_input.customer,
             ):
                 raise DuplicateReservationError
 
             municipality_id = stock.branch.municipality_id
             if self.lending_repository.exists_active_book_by_customer_in_municipality(
-                customer=customer,
+                customer=reservation_input.customer,
                 book=stock.book,
                 municipality_id=municipality_id,
             ):
@@ -363,7 +476,7 @@ class ReservationService:
 
             return self.reservation_repository.create_waiting(
                 stock=stock,
-                customer=customer,
+                customer=reservation_input.customer,
             )
 
     def cancel(self, *, reservation_id: int) -> Reservation:

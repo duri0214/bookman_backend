@@ -13,21 +13,35 @@ from rest_framework import serializers
 
 from bookman.exceptions import BusinessRuleApiError
 from bookman.domain.service import (
+    BranchBookStockMunicipalityMismatchError,
     BranchBookStockTransferService,
+    ContactStaffBranchRequiredError,
+    ContactStaffMunicipalityMismatchError,
+    CrossMunicipalityTransferError,
     CustomerLendingLimitExceededError,
+    DuplicateBranchBookStockError,
     DuplicateBookLendingError,
     DuplicateBookReservationError,
     DuplicateReservationError,
     InsufficientStockError,
+    LendingMunicipalityMismatchError,
     LendingAlreadyReturnedError,
     LendingNotFoundError,
     LendingService,
     LendingStockUnavailableError,
     ReservationNotCancelableError,
     ReservationNotFoundError,
+    ReservationMunicipalityMismatchError,
     ReservationService,
     ReservationStockAvailableError,
+    SameBranchTransferError,
     SourceStockNotFoundError,
+)
+from bookman.domain.valueobject import (
+    BranchBookStockTransferInput,
+    BranchBookStockValidationInput,
+    LendingRegistrationInput,
+    ReservationRegistrationInput,
 )
 
 from bookman.models import (
@@ -494,30 +508,30 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
             branch = branch or self.instance.branch
             book = book or self.instance.book
 
-        if (
-            municipality is not None
-            and branch is not None
-            and branch.municipality_id != municipality.id
-        ):
+        if branch is None or book is None:
+            return attrs
+
+        try:
+            BranchBookStockTransferService().validate_stock_registration(
+                BranchBookStockValidationInput(
+                    branch=branch,
+                    book=book,
+                    selected_municipality=municipality,
+                    current_stock=self.instance,
+                )
+            )
+        except BranchBookStockMunicipalityMismatchError as exc:
             raise serializers.ValidationError(
                 {"branch": "選択中自治体の支店を指定してください。"}
-            )
-
-        if branch is not None and book is not None:
-            duplicate_queryset = BranchBookStock.objects.filter(
-                branch=branch,
-                book=book,
-            )
-            if self.instance is not None:
-                duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
-            if duplicate_queryset.exists():
-                raise serializers.ValidationError(
-                    {
-                        "non_field_errors": [
-                            "この支店には対象書籍の所蔵が既に登録されています。"
-                        ]
-                    }
-                )
+            ) from exc
+        except DuplicateBranchBookStockError as exc:
+            raise serializers.ValidationError(
+                {
+                    "non_field_errors": [
+                        "この支店には対象書籍の所蔵が既に登録されています。"
+                    ]
+                }
+            ) from exc
 
         return attrs
 
@@ -544,14 +558,18 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
         """
         同一支店への移動と自治体をまたぐ移動を拒否する。
         """
-        if attrs["from_branch"] == attrs["to_branch"]:
+        try:
+            BranchBookStockTransferService().validate_transfer_request(
+                BranchBookStockTransferInput(**attrs)
+            )
+        except SameBranchTransferError as exc:
             raise serializers.ValidationError(
                 {"to_branch": "移動元と移動先には別の支店を指定してください。"}
-            )
-        if attrs["from_branch"].municipality_id != attrs["to_branch"].municipality_id:
+            ) from exc
+        except CrossMunicipalityTransferError as exc:
             raise serializers.ValidationError(
                 {"to_branch": "自治体が異なる支店へは移動できません。"}
-            )
+            ) from exc
 
         return attrs
 
@@ -560,7 +578,17 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
         支店間移動の業務処理を実行する。
         """
         try:
-            return BranchBookStockTransferService().transfer(**validated_data)
+            return BranchBookStockTransferService().transfer(
+                BranchBookStockTransferInput(**validated_data)
+            )
+        except SameBranchTransferError as exc:
+            raise serializers.ValidationError(
+                {"to_branch": "移動元と移動先には別の支店を指定してください。"}
+            ) from exc
+        except CrossMunicipalityTransferError as exc:
+            raise serializers.ValidationError(
+                {"to_branch": "自治体が異なる支店へは移動できません。"}
+            ) from exc
         except SourceStockNotFoundError as exc:
             raise serializers.ValidationError(
                 {"from_branch": "移動元支店に対象書籍の所蔵がありません。"}
@@ -639,25 +667,45 @@ class LendingSerializer(serializers.ModelSerializer):
         """
         municipality = self.context.get("municipality")
         stock = attrs.get("branch_book_stock")
+        customer = attrs.get("customer")
         contact_staff = attrs.get("contact_staff")
+        return_date = attrs.get("return_date")
 
         if (
-            municipality is not None
-            and stock is not None
-            and stock.branch.municipality_id != municipality.id
+            stock is None
+            or customer is None
+            or contact_staff is None
+            or return_date is None
         ):
+            return attrs
+
+        try:
+            LendingService().validate_registration(
+                LendingRegistrationInput(
+                    branch_book_stock=stock,
+                    customer=customer,
+                    contact_staff=contact_staff,
+                    return_date=return_date,
+                    selected_municipality=municipality,
+                )
+            )
+        except LendingMunicipalityMismatchError as exc:
+            field_name = str(exc)
+            if field_name == "contact_staff":
+                raise serializers.ValidationError(
+                    {"contact_staff": "選択中自治体の職員を指定してください。"}
+                ) from exc
             raise serializers.ValidationError(
                 {"branch_book_stock": "選択中自治体の所蔵を指定してください。"}
-            )
-        if (
-            municipality is not None
-            and contact_staff is not None
-            and contact_staff.branch_id is not None
-            and contact_staff.branch.municipality_id != municipality.id
-        ):
+            ) from exc
+        except ContactStaffBranchRequiredError as exc:
             raise serializers.ValidationError(
-                {"contact_staff": "選択中自治体の職員を指定してください。"}
-            )
+                {"contact_staff": "対応者には所属支店が必要です。"}
+            ) from exc
+        except ContactStaffMunicipalityMismatchError as exc:
+            raise serializers.ValidationError(
+                {"contact_staff": "対象所蔵と同じ自治体の職員を指定してください。"}
+            ) from exc
 
         return attrs
 
@@ -665,19 +713,32 @@ class LendingSerializer(serializers.ModelSerializer):
         """
         貸出登録の業務処理を実行する。
         """
-        stock = validated_data["branch_book_stock"]
-        contact_staff = validated_data["contact_staff"]
-        if contact_staff.branch_id is None:
+        lending_input = LendingRegistrationInput(
+            branch_book_stock=validated_data["branch_book_stock"],
+            customer=validated_data["customer"],
+            contact_staff=validated_data["contact_staff"],
+            return_date=validated_data["return_date"],
+            selected_municipality=self.context.get("municipality"),
+        )
+        try:
+            return LendingService().lend(lending_input)
+        except LendingMunicipalityMismatchError as exc:
+            field_name = str(exc)
+            if field_name == "contact_staff":
+                raise serializers.ValidationError(
+                    {"contact_staff": "選択中自治体の職員を指定してください。"}
+                ) from exc
+            raise serializers.ValidationError(
+                {"branch_book_stock": "選択中自治体の所蔵を指定してください。"}
+            ) from exc
+        except ContactStaffBranchRequiredError as exc:
             raise serializers.ValidationError(
                 {"contact_staff": "対応者には所属支店が必要です。"}
-            )
-        if contact_staff.branch.municipality_id != stock.branch.municipality_id:
+            ) from exc
+        except ContactStaffMunicipalityMismatchError as exc:
             raise serializers.ValidationError(
                 {"contact_staff": "対象所蔵と同じ自治体の職員を指定してください。"}
-            )
-
-        try:
-            return LendingService().lend(**validated_data)
+            ) from exc
         except DuplicateBookLendingError as exc:
             raise BusinessRuleApiError(
                 code="duplicate_book_lending",
@@ -737,15 +798,23 @@ class ReservationSerializer(serializers.ModelSerializer):
         """
         municipality = self.context.get("municipality")
         stock = attrs.get("branch_book_stock")
+        customer = attrs.get("customer")
 
-        if (
-            municipality is not None
-            and stock is not None
-            and stock.branch.municipality_id != municipality.id
-        ):
+        if stock is None or customer is None:
+            return attrs
+
+        try:
+            ReservationService().validate_registration(
+                ReservationRegistrationInput(
+                    branch_book_stock=stock,
+                    customer=customer,
+                    selected_municipality=municipality,
+                )
+            )
+        except ReservationMunicipalityMismatchError as exc:
             raise serializers.ValidationError(
                 {"branch_book_stock": "選択中自治体の所蔵を指定してください。"}
-            )
+            ) from exc
 
         return attrs
 
@@ -753,8 +822,17 @@ class ReservationSerializer(serializers.ModelSerializer):
         """
         予約登録の業務処理を実行する。
         """
+        reservation_input = ReservationRegistrationInput(
+            branch_book_stock=validated_data["branch_book_stock"],
+            customer=validated_data["customer"],
+            selected_municipality=self.context.get("municipality"),
+        )
         try:
-            return ReservationService().reserve(**validated_data)
+            return ReservationService().reserve(reservation_input)
+        except ReservationMunicipalityMismatchError as exc:
+            raise serializers.ValidationError(
+                {"branch_book_stock": "選択中自治体の所蔵を指定してください。"}
+            ) from exc
         except ReservationStockAvailableError as exc:
             raise BusinessRuleApiError(
                 code="reservation_stock_available",

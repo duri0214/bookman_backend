@@ -6,6 +6,19 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
+from bookman.domain.service import (
+    BranchBookStockTransferService,
+    ContactStaffBranchRequiredError,
+    DuplicateBranchBookStockError,
+    LendingService,
+    ReservationMunicipalityMismatchError,
+    ReservationService,
+)
+from bookman.domain.valueobject import (
+    BranchBookStockValidationInput,
+    LendingRegistrationInput,
+    ReservationRegistrationInput,
+)
 from bookman.models import (
     Author,
     Book,
@@ -1722,6 +1735,22 @@ class BookmanApiTest(APITestCase):
             1,
         )
 
+    def test_branch_book_stock_domain_validation_rejects_duplicate_pair(self):
+        """
+        シナリオ:
+        - 入力: 既存の支店別所蔵と同じ支店・書籍を持つ検証入力。
+        - 処理: 支店別所蔵の登録前 domain 検証を実行する。
+        - 期待値: 同一支店・同一書籍の重複として例外が発生すること。
+        """
+        stock_input = BranchBookStockValidationInput(
+            branch=self.branch,
+            book=self.book,
+            selected_municipality=self.municipality,
+        )
+
+        with self.assertRaises(DuplicateBranchBookStockError):
+            BranchBookStockTransferService().validate_stock_registration(stock_input)
+
     def test_branch_book_stock_detail_accepts_amount_update(self):
         """
         シナリオ:
@@ -2322,6 +2351,28 @@ class BookmanApiTest(APITestCase):
         )
         self.assertFalse(Lending.objects.exists())
 
+    def test_lending_domain_validation_rejects_staff_without_branch(self):
+        """
+        シナリオ:
+        - 入力: 所属支店を持たない職員を対応者にした貸出登録入力。
+        - 処理: 貸出登録前の domain 検証を実行する。
+        - 期待値: 対応職員の所属支店必須例外が発生すること。
+        """
+        staff_without_branch = LibraryStaff.objects.create(
+            name="所属なし職員",
+            role="counter",
+        )
+        lending_input = LendingRegistrationInput(
+            branch_book_stock=self.branch_stock,
+            customer=self.customer,
+            contact_staff=staff_without_branch,
+            return_date=date(2026, 1, 15),
+            selected_municipality=self.municipality,
+        )
+
+        with self.assertRaises(ContactStaffBranchRequiredError):
+            LendingService().validate_registration(lending_input)
+
     def test_lending_create_adjusts_return_date_for_branch_closed_days(self):
         """
         シナリオ:
@@ -2721,6 +2772,34 @@ class BookmanApiTest(APITestCase):
             "選択中自治体の所蔵を指定してください。",
         )
         self.assertFalse(Reservation.objects.exists())
+
+    def test_reservation_domain_validation_rejects_stock_outside_municipality(self):
+        """
+        シナリオ:
+        - 入力: 選択自治体とは別自治体の所蔵を指定した予約登録入力。
+        - 処理: 予約登録前の domain 検証を実行する。
+        - 期待値: 自治体スコープ不一致として例外が発生すること。
+        """
+        other_branch = Branch.objects.create(
+            municipality=self.other_municipality,
+            name="他自治体予約支店",
+            address="青森県上北郡七戸町",
+            phone="0176-00-0103",
+            remark="別自治体",
+        )
+        other_stock = BranchBookStock.objects.create(
+            branch=other_branch,
+            book=self.book,
+            amount=1,
+        )
+        reservation_input = ReservationRegistrationInput(
+            branch_book_stock=other_stock,
+            customer=self.customer,
+            selected_municipality=self.municipality,
+        )
+
+        with self.assertRaises(ReservationMunicipalityMismatchError):
+            ReservationService().validate_registration(reservation_input)
 
     def test_reservation_create_rejects_available_stock(self):
         """

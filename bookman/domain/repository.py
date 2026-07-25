@@ -46,6 +46,21 @@ class BranchBookStockRepository:
             defaults={"amount": 0},
         )
 
+    def exists_by_branch_and_book(
+        self,
+        *,
+        branch: Branch,
+        book: Book,
+        exclude_stock: BranchBookStock | None = None,
+    ) -> bool:
+        """
+        同じ支店と書籍の所蔵が既に存在するかどうかを返す。
+        """
+        stocks = BranchBookStock.objects.filter(branch=branch, book=book)
+        if exclude_stock is not None:
+            stocks = stocks.exclude(pk=exclude_stock.pk)
+        return stocks.exists()
+
     def save(self, stock: BranchBookStock) -> None:
         """
         支店別所蔵数を保存する。
