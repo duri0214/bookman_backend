@@ -283,6 +283,8 @@ class BookmanApiTest(APITestCase):
                     "address": "青森県上北郡六戸町",
                     "phone": "0176-00-0000",
                     "remark": "本館",
+                    "book_stock_book_count": 1,
+                    "book_stock_total_amount": 2,
                 },
                 {
                     "id": self.second_branch.id,
@@ -292,9 +294,39 @@ class BookmanApiTest(APITestCase):
                     "address": "青森県上北郡六戸町東",
                     "phone": "0176-00-0001",
                     "remark": "分館",
+                    "book_stock_book_count": 0,
+                    "book_stock_total_amount": 0,
                 },
             ],
         )
+
+    def test_branch_detail_returns_stock_summary(self):
+        """
+        シナリオ:
+        - 入力: 支店に2種類の書籍所蔵が登録されている状態。
+        - 処理: 支店詳細APIへGETリクエストする。
+        - 期待値: 支店基本情報と所蔵書籍数・総所蔵冊数が返ること。
+        """
+        second_book = Book.objects.create(
+            name="銀河鉄道の夜",
+            category=self.category,
+            lead_text="宮沢賢治の代表作です。",
+            isbn="9780000000002",
+            publication_date=date(2026, 1, 2),
+        )
+        second_book.authors.set([self.second_author])
+        BranchBookStock.objects.create(
+            branch=self.branch,
+            book=second_book,
+            amount=3,
+        )
+
+        response = self.client.get(f"/bookman/api/branches/{self.branch.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "中央図書館")
+        self.assertEqual(response.data["book_stock_book_count"], 2)
+        self.assertEqual(response.data["book_stock_total_amount"], 5)
 
     def test_branch_list_endpoint_accepts_create_request(self):
         """
@@ -319,12 +351,113 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["name"], "西図書館")
         self.assertEqual(response.data["municipality"], self.municipality.id)
+        self.assertEqual(response.data["remark"], "西分館")
+        self.assertEqual(response.data["book_stock_book_count"], 0)
+        self.assertEqual(response.data["book_stock_total_amount"], 0)
         self.assertTrue(
             Branch.objects.filter(
                 municipality=self.municipality,
                 name="西図書館",
             ).exists()
         )
+
+    def test_branch_create_accepts_blank_remark(self):
+        """
+        シナリオ:
+        - 入力: remark を省略した支店登録ペイロード。
+        - 処理: 支店一覧APIへPOSTリクエストする。
+        - 期待値: 補足情報が空文字の支店として作成されること。
+        """
+        payload = {
+            "name": "南図書館",
+            "address": "青森県上北郡六戸町南",
+            "phone": "0176-00-0004",
+        }
+
+        response = self.client.post(
+            f"/bookman/api/branches/?municipality={self.municipality.id}",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["remark"], "")
+        self.assertTrue(Branch.objects.filter(name="南図書館", remark="").exists())
+
+    def test_branch_detail_updates_master_fields(self):
+        """
+        シナリオ:
+        - 入力: 既存支店と支店マスタ更新ペイロード。
+        - 処理: 支店詳細APIへPATCHリクエストする。
+        - 期待値: 支店名、住所、電話番号、補足情報が更新されること。
+        """
+        response = self.client.patch(
+            f"/bookman/api/branches/{self.branch.id}/?municipality={self.municipality.id}",
+            {
+                "name": "中央図書館 改訂",
+                "address": "青森県上北郡六戸町中央",
+                "phone": "0176-00-0099",
+                "remark": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.branch.refresh_from_db()
+        self.assertEqual(self.branch.name, "中央図書館 改訂")
+        self.assertEqual(self.branch.address, "青森県上北郡六戸町中央")
+        self.assertEqual(self.branch.phone, "0176-00-0099")
+        self.assertEqual(self.branch.remark, "")
+
+    def test_branch_detail_updates_municipality_and_keeps_relations(self):
+        """
+        シナリオ:
+        - 入力: 支店別所蔵、職員、休館日を持つ既存支店と所属自治体変更ペイロード。
+        - 処理: 支店詳細APIへPATCHリクエストする。
+        - 期待値: 支店の所属自治体が変わり、支店起点の関連データは同じ支店に紐づいたまま残ること。
+        """
+        closed_day = BranchClosedDay.objects.create(
+            branch=self.branch,
+            date=date(2026, 1, 10),
+            reason="蔵書点検",
+        )
+
+        response = self.client.patch(
+            f"/bookman/api/branches/{self.branch.id}/",
+            {"municipality": self.other_municipality.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.branch.refresh_from_db()
+        self.branch_stock.refresh_from_db()
+        self.contact_staff.refresh_from_db()
+        closed_day.refresh_from_db()
+        self.assertEqual(self.branch.municipality_id, self.other_municipality.id)
+        self.assertEqual(self.branch_stock.branch_id, self.branch.id)
+        self.assertEqual(self.contact_staff.branch_id, self.branch.id)
+        self.assertEqual(closed_day.branch_id, self.branch.id)
+
+    def test_branch_update_rejects_duplicate_name_in_same_municipality(self):
+        """
+        シナリオ:
+        - 入力: 同じ自治体に既に存在する支店名への名称変更ペイロード。
+        - 処理: 支店詳細APIへPATCHリクエストする。
+        - 期待値: 400 が返り、支店名が重複状態に更新されないこと。
+        """
+        response = self.client.patch(
+            f"/bookman/api/branches/{self.second_branch.id}/?municipality={self.municipality.id}",
+            {"name": self.branch.name},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data["name"][0],
+            "この自治体には同じ支店名が既に登録されています。",
+        )
+        self.second_branch.refresh_from_db()
+        self.assertEqual(self.second_branch.name, "東図書館")
 
     def test_branch_list_filters_by_municipality(self):
         """

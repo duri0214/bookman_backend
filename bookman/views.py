@@ -118,7 +118,14 @@ class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
         return municipality_id
 
     def get_queryset(self):
-        queryset = Branch.objects.select_related("municipality").order_by("id")
+        queryset = (
+            Branch.objects.select_related("municipality")
+            .annotate(
+                book_stock_book_count=Count("book_stocks__book", distinct=True),
+                book_stock_total_amount=Coalesce(Sum("book_stocks__amount"), 0),
+            )
+            .order_by("id")
+        )
         municipality = None
         has_municipality = has_municipality_query(self.request)
         if has_municipality:
@@ -135,6 +142,33 @@ class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
         if municipality is None:
             municipality = self.get_required_municipality()
         serializer.save(municipality=municipality)
+
+
+class BranchDetail(RequiredMunicipalityMutationMixin, generics.RetrieveUpdateAPIView):
+    serializer_class = BranchSerializer
+
+    def get_mutation_municipality_id(self):
+        municipality_id = self.request.query_params.get("municipality")
+        if municipality_id is None:
+            municipality_id = self.request.data.get("municipality")
+        return municipality_id
+
+    def get_queryset(self):
+        queryset = (
+            Branch.objects.select_related("municipality")
+            .annotate(
+                book_stock_book_count=Count("book_stocks__book", distinct=True),
+                book_stock_total_amount=Coalesce(Sum("book_stocks__amount"), 0),
+            )
+            .order_by("id")
+        )
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(municipality=municipality)
+
+        return queryset
 
 
 class BranchClosedDayList(

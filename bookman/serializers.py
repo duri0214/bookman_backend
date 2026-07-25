@@ -6,6 +6,7 @@ API リクエストでは JSON の入力値を検証して model に保存でき
 """
 
 from django.db import transaction
+from django.db.models import Sum
 from rest_framework import serializers
 
 from bookman.exceptions import BusinessRuleApiError
@@ -120,6 +121,8 @@ class BranchSerializer(serializers.ModelSerializer):
     municipality_name = serializers.CharField(
         source="municipality.name", read_only=True
     )
+    book_stock_book_count = serializers.SerializerMethodField()
+    book_stock_total_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Branch
@@ -131,12 +134,68 @@ class BranchSerializer(serializers.ModelSerializer):
             "address",
             "phone",
             "remark",
+            "book_stock_book_count",
+            "book_stock_total_amount",
         ]
         validators = []
 
+    def get_book_stock_book_count(self, obj):
+        """
+        支店に登録されている書籍種類数を返す。
+        """
+        annotated_count = getattr(obj, "book_stock_book_count", None)
+        if annotated_count is not None:
+            return annotated_count
+
+        return obj.book_stocks.values("book").distinct().count()
+
+    def get_book_stock_total_amount(self, obj):
+        """
+        支店別所蔵数の合計冊数を返す。
+        """
+        annotated_total = getattr(obj, "book_stock_total_amount", None)
+        if annotated_total is not None:
+            return annotated_total
+
+        total_amount = obj.book_stocks.aggregate(total=Sum("amount"))["total"]
+        return total_amount or 0
+
+    def validate_name(self, value):
+        """
+        支店名は前後の空白を除いた値で保存する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        return trimmed_value
+
+    def validate_address(self, value):
+        """
+        支店住所は前後の空白を除いた値で保存する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        return trimmed_value
+
+    def validate_phone(self, value):
+        """
+        支店電話番号は前後の空白を除いた値で保存する。
+        """
+        trimmed_value = value.strip()
+        if not trimmed_value:
+            raise serializers.ValidationError("この項目は空にできません。")
+        return trimmed_value
+
+    def validate_remark(self, value):
+        """
+        支店補足情報は任意入力として、前後の空白を除いた値で保存する。
+        """
+        return value.strip()
+
     def validate(self, attrs):
         """
-        選択中自治体の支店だけを登録・更新の対象にする。
+        選択中自治体の支店だけを登録・更新の対象にし、同一自治体内の支店名重複を拒否する。
         """
         municipality = self.context.get("municipality")
         branch_municipality = attrs.get("municipality")
@@ -151,6 +210,19 @@ class BranchSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"municipality": "選択中自治体を指定してください。"}
             )
+
+        branch_name = attrs.get("name")
+        if branch_municipality is not None and branch_name is not None:
+            duplicate_queryset = Branch.objects.filter(
+                municipality=branch_municipality,
+                name=branch_name,
+            )
+            if self.instance is not None:
+                duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+            if duplicate_queryset.exists():
+                raise serializers.ValidationError(
+                    {"name": "この自治体には同じ支店名が既に登録されています。"}
+                )
 
         return attrs
 
