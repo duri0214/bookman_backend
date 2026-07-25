@@ -85,17 +85,26 @@ python manage.py makemigrations --check --dry-run
 開発用 DB のデータを入れ直す場合は、Django 管理下のテーブルを空にしてから初期データを読み込みます。
 
 ```console
-python manage.py flush --noinput
+python manage.py reset_dev_data
 ```
 
-`flush` はデータを削除します。開発用 DB だけで実行し、本番 DB や共有 DB では実行しないでください。
+`reset_dev_data` は内部で `flush` を実行するため、既存データを削除します。開発用 DB だけで実行し、本番 DB や共有 DB では実行しないでください。
 MySQL では通常、主キーの自動採番もリセットされます。テーブル定義や migration 状態から作り直したい場合は、DB を作り直してから `python manage.py migrate` を実行してください。
 
-初期データを読み込みます。
+`reset_dev_data` は以下の fixture を依存順に読み込みます。
 
-```console
-python manage.py loaddata bookman/fixtures/m_municipality-data.json bookman/fixtures/m_branch-data.json bookman/fixtures/m_category-data.json bookman/fixtures/author-data.json bookman/fixtures/book-data.json bookman/fixtures/branch-book-stock-data.json bookman/fixtures/customer-data.json bookman/fixtures/library-staff-data.json bookman/fixtures/branch-closed-day-data.json bookman/fixtures/lending-data.json bookman/fixtures/reservation-data.json bookman/fixtures/search-condition-data.json
-```
+- `bookman/fixtures/m_municipality-data.json`
+- `bookman/fixtures/m_branch-data.json`
+- `bookman/fixtures/m_category-data.json`
+- `bookman/fixtures/author-data.json`
+- `bookman/fixtures/book-data.json`
+- `bookman/fixtures/branch-book-stock-data.json`
+- `bookman/fixtures/customer-data.json`
+- `bookman/fixtures/library-staff-data.json`
+- `bookman/fixtures/branch-closed-day-data.json`
+- `bookman/fixtures/lending-data.json`
+- `bookman/fixtures/reservation-data.json`
+- `bookman/fixtures/search-condition-data.json`
 
 第二期の画面確認用 fixture では、以下の状態をまとめて確認できます。
 

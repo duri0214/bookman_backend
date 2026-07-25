@@ -32,26 +32,10 @@ class BookmanFixtureTest(TransactionTestCase):
         """
         シナリオ:
         - 入力: 第二期画面確認用 fixture 一式。
-        - 処理: README の順序で loaddata し、代表 API へGETリクエストする。
+        - 処理: README の reset_dev_data を実行し、代表 API へGETリクエストする。
         - 期待値: fixture が投入でき、所蔵、貸出中、予約中、職員 role を確認できること。
         """
-        fixture_paths = [
-            "bookman/fixtures/m_municipality-data.json",
-            "bookman/fixtures/m_branch-data.json",
-            "bookman/fixtures/m_category-data.json",
-            "bookman/fixtures/author-data.json",
-            "bookman/fixtures/book-data.json",
-            "bookman/fixtures/branch-book-stock-data.json",
-            "bookman/fixtures/customer-data.json",
-            "bookman/fixtures/library-staff-data.json",
-            "bookman/fixtures/branch-closed-day-data.json",
-            "bookman/fixtures/lending-data.json",
-            "bookman/fixtures/reservation-data.json",
-            "bookman/fixtures/search-condition-data.json",
-        ]
-
-        for fixture_path in fixture_paths:
-            call_command("loaddata", fixture_path, verbosity=0)
+        call_command("reset_dev_data", force=True, verbosity=0)
 
         stock_response = self.client.get("/bookman/api/branch-book-stocks/")
         lending_response = self.client.get("/bookman/api/lendings/")
