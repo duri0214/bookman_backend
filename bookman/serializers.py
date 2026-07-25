@@ -5,9 +5,15 @@ serializer は、API レスポンスでは Django model を JSON にできる値
 API リクエストでは JSON の入力値を検証して model に保存できる値へ戻す。
 """
 
+from typing import Any
+
 from rest_framework import serializers
 
 from bookman.exceptions import BusinessRuleApiError
+from bookman.domain.valueobject import (
+    BranchBookStockTransfer as BranchBookStockTransferValue,
+    LendingReturn as LendingReturnValue,
+)
 from bookman.domain.service import (
     BranchBookStockTransferService,
     CustomerLendingLimitExceededError,
@@ -59,7 +65,7 @@ class MunicipalitySerializer(serializers.ModelSerializer):
         model = Municipality
         fields = ["id", "name"]
 
-    def validate_name(self, value):
+    def validate_name(self, value: str) -> str:
         """
         自治体名は前後の空白を除いた値で保存する。
         """
@@ -151,7 +157,7 @@ class SearchConditionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["owner_type"]
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """
         保存条件の共有範囲と職員権限の整合性を検証する。
         """
@@ -213,14 +219,14 @@ class SearchConditionSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def get_can_update(self, obj):
+    def get_can_update(self, obj: SearchCondition) -> bool:
         """
         リクエスト職員が保存条件を更新できるかどうかを返す。
         """
         staff = self.context.get("staff")
         return can_manage_search_condition(staff, obj)
 
-    def get_can_delete(self, obj):
+    def get_can_delete(self, obj: SearchCondition) -> bool:
         """
         リクエスト職員が保存条件を削除できるかどうかを返す。
         """
@@ -228,7 +234,10 @@ class SearchConditionSerializer(serializers.ModelSerializer):
         return can_manage_search_condition(staff, obj)
 
 
-def can_manage_search_condition(staff, condition):
+def can_manage_search_condition(
+    staff: LibraryStaff | None,
+    condition: SearchCondition,
+) -> bool:
     """
     職員ロールと所有関係から保存条件を変更できるか判定する。
     """
@@ -282,7 +291,7 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
         ]
         validators = []
 
-    def get_available_amount(self, obj):
+    def get_available_amount(self, obj: BranchBookStock) -> int:
         """
         支店別所蔵数から貸出中と取り置き中の冊数を差し引いた貸出可能冊数を返す。
         """
@@ -298,7 +307,7 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
 
         return max(obj.amount - active_lending_count - held_reservation_count, 0)
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """
         選択中自治体の支店だけを所蔵数登録・更新の対象にする。
         """
@@ -356,7 +365,7 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
     source_stock = BranchBookStockSerializer(read_only=True)
     destination_stock = BranchBookStockSerializer(read_only=True)
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """
         同一支店への移動と自治体をまたぐ移動を拒否する。
         """
@@ -371,7 +380,10 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
 
         return attrs
 
-    def create(self, validated_data):
+    def create(
+        self,
+        validated_data: dict[str, Any],
+    ) -> BranchBookStockTransferValue:
         """
         支店間移動の業務処理を実行する。
         """
@@ -440,7 +452,7 @@ class LendingSerializer(serializers.ModelSerializer):
             "return_date_adjustment_reason",
         ]
 
-    def get_return_date_adjusted(self, obj):
+    def get_return_date_adjusted(self, obj: Lending) -> bool:
         """
         返却予定日が休館日により補正されたかどうかを返す。
         """
@@ -449,7 +461,7 @@ class LendingSerializer(serializers.ModelSerializer):
             and obj.original_return_date != obj.return_date
         )
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> Lending:
         """
         貸出登録の業務処理を実行する。
         """
@@ -519,7 +531,7 @@ class ReservationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["status", "hold_expires_on", "created_at"]
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> Reservation:
         """
         予約登録の業務処理を実行する。
         """
@@ -551,7 +563,7 @@ class ReservationCancelSerializer(serializers.Serializer):
 
     canceled_reservation = ReservationSerializer(read_only=True)
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> Reservation:
         """
         予約取消の業務処理を実行する。
         """
@@ -570,7 +582,7 @@ class ReservationCancelSerializer(serializers.Serializer):
                 message="取消対象の予約は取り消しできない状態です。",
             ) from exc
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: Reservation) -> dict[str, Any]:
         """
         取消後の予約情報を canceled_reservation として返す。
         """
@@ -587,7 +599,7 @@ class ReservationExpireSerializer(serializers.Serializer):
     expired_count = serializers.IntegerField(read_only=True)
     expired_reservations = ReservationSerializer(read_only=True, many=True)
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> dict[str, Any]:
         """
         取り置き期限切れ処理を実行する。
         """
@@ -609,7 +621,7 @@ class LendingReturnSerializer(serializers.Serializer):
     returned_lending = LendingSerializer(read_only=True)
     held_reservation = ReservationSerializer(read_only=True)
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> LendingReturnValue:
         """
         返却の業務処理を実行する。
         """
@@ -626,7 +638,7 @@ class LendingReturnSerializer(serializers.Serializer):
                 message="返却対象の貸出情報はすでに返却済みです。",
             ) from exc
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: LendingReturnValue) -> dict[str, Any]:
         """
         返却後の貸出情報と、取り置きへ進んだ予約があれば held_reservation として返す。
         """
@@ -666,7 +678,7 @@ class BookSerializer(serializers.ModelSerializer):
             "publication_date",
         ]
 
-    def get_total_amount(self, obj):
+    def get_total_amount(self, obj: Book) -> int:
         """
         指定自治体内の支店別所蔵数の小計を合計して返す。
         """
@@ -681,7 +693,7 @@ class BookSerializer(serializers.ModelSerializer):
 
         return sum(branch_stock.amount for branch_stock in branch_stocks)
 
-    def get_branch_stocks(self, obj):
+    def get_branch_stocks(self, obj: Book) -> list[dict[str, Any]]:
         """
         指定自治体内の支店別所蔵数だけを返す。
         """
