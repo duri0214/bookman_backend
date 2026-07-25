@@ -280,6 +280,7 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
             "amount",
             "available_amount",
         ]
+        validators = []
 
     def get_available_amount(self, obj):
         """
@@ -296,6 +297,45 @@ class BranchBookStockSerializer(serializers.ModelSerializer):
             ).count()
 
         return max(obj.amount - active_lending_count - held_reservation_count, 0)
+
+    def validate(self, attrs):
+        """
+        選択中自治体の支店だけを所蔵数登録・更新の対象にする。
+        """
+        municipality = self.context.get("municipality")
+
+        branch = attrs.get("branch")
+        book = attrs.get("book")
+        if self.instance is not None:
+            branch = branch or self.instance.branch
+            book = book or self.instance.book
+
+        if (
+            municipality is not None
+            and branch is not None
+            and branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"branch": "選択中自治体の支店を指定してください。"}
+            )
+
+        if branch is not None and book is not None:
+            duplicate_queryset = BranchBookStock.objects.filter(
+                branch=branch,
+                book=book,
+            )
+            if self.instance is not None:
+                duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+            if duplicate_queryset.exists():
+                raise serializers.ValidationError(
+                    {
+                        "non_field_errors": [
+                            "この支店には対象書籍の所蔵が既に登録されています。"
+                        ]
+                    }
+                )
+
+        return attrs
 
 
 class BranchBookStockTransferSerializer(serializers.Serializer):

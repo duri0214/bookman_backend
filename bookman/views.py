@@ -408,7 +408,32 @@ class BookDetail(generics.RetrieveAPIView):
         )
 
 
-class BranchBookStockList(generics.ListCreateAPIView):
+class BranchBookStockMunicipalityScopeMixin:
+    """
+    支店別所蔵管理APIでは自治体の明示指定を必須にする。
+    """
+
+    def get_municipality(self):
+        municipality_id = self.request.query_params.get("municipality")
+        if municipality_id is None:
+            raise ValidationError({"municipality": "自治体を指定してください。"})
+
+        municipality = Municipality.objects.filter(id=municipality_id).first()
+        if municipality is None:
+            raise ValidationError({"municipality": "指定された自治体が存在しません。"})
+
+        return municipality
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["municipality"] = self.get_municipality()
+        return context
+
+
+class BranchBookStockList(
+    BranchBookStockMunicipalityScopeMixin,
+    generics.ListCreateAPIView,
+):
     serializer_class = BranchBookStockSerializer
 
     def get_queryset(self):
@@ -428,16 +453,13 @@ class BranchBookStockList(generics.ListCreateAPIView):
             )
             .order_by("book_id", "branch_id", "id")
         )
-        municipality = get_request_municipality(self.request)
-        if municipality is None and has_municipality_query(self.request):
-            return queryset.none()
-        if municipality is not None:
-            queryset = queryset.filter(branch__municipality=municipality)
-
-        return queryset
+        return queryset.filter(branch__municipality=self.get_municipality())
 
 
-class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
+class BranchBookStockDetail(
+    BranchBookStockMunicipalityScopeMixin,
+    generics.RetrieveUpdateAPIView,
+):
     serializer_class = BranchBookStockSerializer
 
     def get_queryset(self):
@@ -453,13 +475,7 @@ class BranchBookStockDetail(generics.RetrieveUpdateAPIView):
                 distinct=True,
             ),
         )
-        municipality = get_request_municipality(self.request)
-        if municipality is None and has_municipality_query(self.request):
-            return queryset.none()
-        if municipality is not None:
-            queryset = queryset.filter(branch__municipality=municipality)
-
-        return queryset
+        return queryset.filter(branch__municipality=self.get_municipality())
 
 
 class BranchBookStockTransfer(generics.GenericAPIView):
