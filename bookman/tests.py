@@ -1,8 +1,10 @@
 from datetime import date, timedelta
 
+from django.core.management import call_command
+from django.test import TransactionTestCase
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from bookman.models import (
     Author,
@@ -18,6 +20,64 @@ from bookman.models import (
     Reservation,
     SearchCondition,
 )
+
+
+class BookmanFixtureTest(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_phase_two_fixture_loads_and_supports_representative_api_checks(self):
+        """
+        シナリオ:
+        - 入力: 第二期画面確認用 fixture 一式。
+        - 処理: README の順序で loaddata し、代表 API へGETリクエストする。
+        - 期待値: fixture が投入でき、所蔵、貸出中、予約中、職員 role を確認できること。
+        """
+        fixture_paths = [
+            "bookman/fixtures/m_municipality-data.json",
+            "bookman/fixtures/m_branch-data.json",
+            "bookman/fixtures/m_category-data.json",
+            "bookman/fixtures/author-data.json",
+            "bookman/fixtures/book-data.json",
+            "bookman/fixtures/branch-book-stock-data.json",
+            "bookman/fixtures/customer-data.json",
+            "bookman/fixtures/library-staff-data.json",
+            "bookman/fixtures/branch-closed-day-data.json",
+            "bookman/fixtures/lending-data.json",
+            "bookman/fixtures/reservation-data.json",
+            "bookman/fixtures/search-condition-data.json",
+        ]
+
+        for fixture_path in fixture_paths:
+            call_command("loaddata", fixture_path, verbosity=0)
+
+        stock_response = self.client.get("/bookman/api/branch-book-stocks/")
+        lending_response = self.client.get("/bookman/api/lendings/")
+        reservation_response = self.client.get("/bookman/api/reservations/")
+        staff_response = self.client.get("/bookman/api/staff/")
+
+        self.assertEqual(stock_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(lending_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(reservation_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(staff_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            BranchBookStock.objects.values("book").distinct().count(),
+            Book.objects.count(),
+        )
+        self.assertGreaterEqual(BranchBookStock.objects.count(), 20)
+        self.assertTrue(Lending.objects.filter(active=True).exists())
+        self.assertTrue(
+            Reservation.objects.filter(status=Reservation.Status.WAITING).exists()
+        )
+        self.assertTrue(
+            Reservation.objects.filter(status=Reservation.Status.HELD).exists()
+        )
+        self.assertEqual(
+            set(LibraryStaff.objects.values_list("role", flat=True)),
+            {"counter", "manager", "admin"},
+        )
 
 
 class BookmanApiTest(APITestCase):

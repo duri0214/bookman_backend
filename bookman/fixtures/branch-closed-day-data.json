@@ -1,0 +1,35 @@
+[
+  {
+    "model": "bookman.branchclosedday",
+    "pk": 1001,
+    "fields": {
+      "branch": 1,
+      "date": "2026-07-29",
+      "reason": "月末休館",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchclosedday",
+    "pk": 1002,
+    "fields": {
+      "branch": 2,
+      "date": "2026-08-12",
+      "reason": "蔵書点検",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  },
+  {
+    "model": "bookman.branchclosedday",
+    "pk": 1003,
+    "fields": {
+      "branch": 5,
+      "date": "2026-08-13",
+      "reason": "館内整理日",
+      "created_at": "2026-01-01",
+      "updated_at": "2026-01-01"
+    }
+  }
+]

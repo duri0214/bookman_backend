@@ -1,0 +1,62 @@
+[
+  {
+    "model": "bookman.lending",
+    "pk": 1001,
+    "fields": {
+      "return_date": "2026-08-05",
+      "original_return_date": "2026-08-05",
+      "return_date_adjustment_reason": "",
+      "branch_book_stock": 1002,
+      "active": true,
+      "customer": 1004,
+      "contact_staff": 1001,
+      "created_at": "2026-07-22",
+      "updated_at": "2026-07-22"
+    }
+  },
+  {
+    "model": "bookman.lending",
+    "pk": 1002,
+    "fields": {
+      "return_date": "2026-08-06",
+      "original_return_date": "2026-08-06",
+      "return_date_adjustment_reason": "",
+      "branch_book_stock": 1004,
+      "active": true,
+      "customer": 1003,
+      "contact_staff": 1003,
+      "created_at": "2026-07-23",
+      "updated_at": "2026-07-23"
+    }
+  },
+  {
+    "model": "bookman.lending",
+    "pk": 1003,
+    "fields": {
+      "return_date": "2026-07-30",
+      "original_return_date": "2026-07-29",
+      "return_date_adjustment_reason": "月末休館",
+      "branch_book_stock": 1008,
+      "active": true,
+      "customer": 1008,
+      "contact_staff": 1006,
+      "created_at": "2026-07-16",
+      "updated_at": "2026-07-16"
+    }
+  },
+  {
+    "model": "bookman.lending",
+    "pk": 1004,
+    "fields": {
+      "return_date": "2026-07-20",
+      "original_return_date": "2026-07-20",
+      "return_date_adjustment_reason": "",
+      "branch_book_stock": 1012,
+      "active": false,
+      "customer": 1002,
+      "contact_staff": 1001,
+      "created_at": "2026-07-01",
+      "updated_at": "2026-07-20"
+    }
+  }
+]
