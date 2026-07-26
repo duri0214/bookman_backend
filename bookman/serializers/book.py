@@ -45,6 +45,7 @@ class BookSerializer(serializers.ModelSerializer):
             "branch_stocks",
             "isbn",
             "publication_date",
+            "created_at",
             "municipality",
             "branch",
             "amount",

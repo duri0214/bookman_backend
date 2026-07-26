@@ -1078,6 +1078,9 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.data[0]["authors"], [self.author.id])
         self.assertEqual(response.data[0]["total_amount"], 2)
         self.assertEqual(
+            response.data[0]["created_at"], self.book.created_at.isoformat()
+        )
+        self.assertEqual(
             response.data[0]["branch_stocks"],
             [
                 {
