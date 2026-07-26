@@ -25,6 +25,7 @@ from .serializers import (
     AuthorSerializer,
     BranchBookStockTransferSerializer,
     BranchBookStockSerializer,
+    BookCsvImportSerializer,
     BranchClosedDaySerializer,
     BookSerializer,
     BranchSerializer,
@@ -463,6 +464,23 @@ class BookCreate(generics.CreateAPIView):
             )
             .prefetch_related("authors", "branch_stocks__branch")
         )
+
+
+class BookCsvImport(generics.GenericAPIView):
+    serializer_class = BookCsvImportSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+
+        response_status = status.HTTP_400_BAD_REQUEST
+        if result["status"] == "success":
+            response_status = status.HTTP_201_CREATED
+        elif result["status"] == "partial_success":
+            response_status = status.HTTP_200_OK
+
+        return Response(result, status=response_status)
 
 
 class BookDetail(generics.RetrieveUpdateAPIView):

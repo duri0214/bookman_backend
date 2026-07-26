@@ -1,3 +1,7 @@
+import csv
+import io
+import re
+
 from django.db import transaction
 from rest_framework import serializers
 
@@ -173,3 +177,261 @@ class BookSerializer(serializers.ModelSerializer):
             branch_stocks = branch_stocks.filter(branch__municipality=municipality)
 
         return BookBranchStockSerializer(branch_stocks, many=True).data
+
+
+class BookCsvImportSerializer(serializers.Serializer):
+    file = serializers.FileField()
+    municipality = serializers.PrimaryKeyRelatedField(
+        queryset=Municipality.objects.order_by("id")
+    )
+
+    HEADER_FIELDS = {
+        "カテゴリ": "category",
+        "名前": "name",
+        "著者": "authors",
+        "あらすじ": "lead_text",
+        "初期所蔵数": "amount",
+        "所蔵支店": "branch",
+        "ISBN": "isbn",
+        "出版年月日": "publication_date",
+    }
+    AUTHOR_SEPARATOR_PATTERN = re.compile(r"[,、/;；\n]+")
+
+    def create(self, validated_data):
+        """
+        CSVの各行を検証し、有効な行だけ書籍本体と初期支店別所蔵として登録する。
+        """
+        csv_rows, parse_errors = self._read_csv(validated_data["file"])
+        municipality = validated_data["municipality"]
+        row_results = self._build_row_results(csv_rows, municipality)
+
+        created_count = 0
+        with transaction.atomic():
+            for row_result in row_results:
+                if row_result["errors"]:
+                    continue
+
+                serializer = BookSerializer(
+                    data=row_result["data"],
+                    context={"municipality": municipality},
+                )
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                created_count += 1
+
+        errors = parse_errors
+        for row_result in row_results:
+            errors.extend(row_result["errors"])
+
+        failed_count = len({error.get("row") for error in errors if error.get("row")})
+        if parse_errors and not csv_rows:
+            failed_count = 1
+
+        return {
+            "created_count": created_count,
+            "failed_count": failed_count,
+            "errors": errors,
+            "status": self._get_import_status(created_count, failed_count),
+        }
+
+    def _read_csv(self, uploaded_file):
+        raw_content = uploaded_file.read()
+        try:
+            content = raw_content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            content = raw_content.decode("cp932")
+
+        reader = csv.DictReader(io.StringIO(content))
+        if reader.fieldnames is None:
+            return [], [{"field": "file", "message": "CSVヘッダーを入力してください。"}]
+
+        missing_headers = [
+            header for header in self.HEADER_FIELDS if header not in reader.fieldnames
+        ]
+        if missing_headers:
+            joined_headers = "、".join(missing_headers)
+            return [], [
+                {
+                    "field": "header",
+                    "message": f"CSVヘッダーに {joined_headers} が必要です。",
+                }
+            ]
+
+        rows = []
+        for row_number, row in enumerate(reader, start=2):
+            if all(not self._get_cell(row, header) for header in self.HEADER_FIELDS):
+                continue
+            rows.append({"row_number": row_number, "row": row})
+
+        if not rows:
+            return [], [{"field": "file", "message": "CSVデータ行を入力してください。"}]
+
+        return rows, []
+
+    def _build_row_results(self, csv_rows, municipality):
+        categories = {category.name: category for category in Category.objects.all()}
+        authors = {author.name: author for author in Author.objects.all()}
+        branches = {
+            branch.name: branch
+            for branch in Branch.objects.select_related("municipality").all()
+        }
+
+        seen_names = set()
+        seen_isbns = set()
+        row_results = []
+        for csv_row in csv_rows:
+            row_number = csv_row["row_number"]
+            row = csv_row["row"]
+            payload, errors = self._build_payload(
+                row,
+                row_number,
+                municipality,
+                categories,
+                authors,
+                branches,
+            )
+
+            name = payload.get("name")
+            if name:
+                if name in seen_names:
+                    errors.append(
+                        self._build_error(
+                            row_number,
+                            "name",
+                            "CSV内で同じ書籍名が重複しています。",
+                        )
+                    )
+                seen_names.add(name)
+
+            isbn = payload.get("isbn")
+            if isbn:
+                normalized_isbn = isbn.strip().replace("-", "")
+                if normalized_isbn in seen_isbns:
+                    errors.append(
+                        self._build_error(
+                            row_number,
+                            "isbn",
+                            "CSV内で同じISBNが重複しています。",
+                        )
+                    )
+                seen_isbns.add(normalized_isbn)
+
+            if not errors:
+                serializer = BookSerializer(
+                    data=payload,
+                    context={"municipality": municipality},
+                )
+                if not serializer.is_valid():
+                    errors.extend(
+                        self._serializer_errors_to_row_errors(
+                            row_number,
+                            serializer.errors,
+                        )
+                    )
+
+            row_results.append({"data": payload, "errors": errors})
+
+        return row_results
+
+    def _build_payload(
+        self, row, row_number, municipality, categories, authors, branches
+    ):
+        errors = []
+        category_name = self._get_cell(row, "カテゴリ")
+        branch_name = self._get_cell(row, "所蔵支店")
+        author_names = self._get_author_names(row)
+        category = categories.get(category_name)
+        branch = branches.get(branch_name)
+        resolved_authors = [authors.get(author_name) for author_name in author_names]
+
+        if category is None:
+            errors.append(
+                self._build_error(
+                    row_number, "category", "指定されたカテゴリが存在しません。"
+                )
+            )
+
+        if not author_names:
+            errors.append(
+                self._build_error(row_number, "authors", "著者を入力してください。")
+            )
+        missing_author_names = [
+            author_name
+            for author_name, author in zip(author_names, resolved_authors)
+            if author is None
+        ]
+        if missing_author_names:
+            joined_author_names = "、".join(missing_author_names)
+            errors.append(
+                self._build_error(
+                    row_number,
+                    "authors",
+                    f"指定された著者が存在しません: {joined_author_names}",
+                )
+            )
+
+        if branch is None:
+            errors.append(
+                self._build_error(
+                    row_number, "branch", "指定された支店が存在しません。"
+                )
+            )
+        elif branch.municipality_id != municipality.id:
+            errors.append(
+                self._build_error(
+                    row_number,
+                    "branch",
+                    "指定自治体に属する支店を指定してください。",
+                )
+            )
+
+        return (
+            {
+                "category": category.id if category else None,
+                "name": self._get_cell(row, "名前"),
+                "authors": [
+                    author.id for author in resolved_authors if author is not None
+                ],
+                "lead_text": self._get_cell(row, "あらすじ"),
+                "amount": self._get_cell(row, "初期所蔵数"),
+                "branch": branch.id if branch else None,
+                "municipality": municipality.id,
+                "isbn": self._get_cell(row, "ISBN"),
+                "publication_date": self._get_cell(row, "出版年月日"),
+            },
+            errors,
+        )
+
+    def _get_author_names(self, row):
+        author_value = self._get_cell(row, "著者")
+        return [
+            author_name.strip()
+            for author_name in self.AUTHOR_SEPARATOR_PATTERN.split(author_value)
+            if author_name.strip()
+        ]
+
+    def _serializer_errors_to_row_errors(self, row_number, serializer_errors):
+        errors = []
+        for field, messages in serializer_errors.items():
+            if isinstance(messages, list):
+                for message in messages:
+                    errors.append(self._build_error(row_number, field, str(message)))
+            else:
+                errors.append(self._build_error(row_number, field, str(messages)))
+        return errors
+
+    def _get_cell(self, row, header):
+        return (row.get(header) or "").strip()
+
+    def _build_error(self, row_number, field, message):
+        error = {"field": field, "message": message}
+        if row_number is not None:
+            error["row"] = row_number
+        return error
+
+    def _get_import_status(self, created_count, failed_count):
+        if created_count > 0 and failed_count == 0:
+            return "success"
+        if created_count > 0:
+            return "partial_success"
+        return "failed"

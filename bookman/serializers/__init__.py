@@ -1,4 +1,4 @@
-from bookman.serializers.book import BookSerializer
+from bookman.serializers.book import BookCsvImportSerializer, BookSerializer
 from bookman.serializers.lending import LendingReturnSerializer, LendingSerializer
 from bookman.serializers.master import (
     AuthorSerializer,
@@ -25,6 +25,7 @@ from bookman.serializers.stock import (
 __all__ = [
     "AuthorSerializer",
     "BookBranchStockSerializer",
+    "BookCsvImportSerializer",
     "BookSerializer",
     "BranchBookStockSerializer",
     "BranchBookStockTransferSerializer",
