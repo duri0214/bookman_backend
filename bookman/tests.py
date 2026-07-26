@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TransactionTestCase
 from django.utils import timezone
@@ -1319,6 +1320,162 @@ class BookmanApiTest(APITestCase):
             "ISBN-10 または ISBN-13 の形式で入力してください。",
         )
         self.assertFalse(Book.objects.filter(name="草枕").exists())
+
+    def test_book_csv_import_creates_books_and_initial_stocks(self):
+        """
+        シナリオ:
+        - 入力: 2行の正常な書籍CSVと自治体ID。
+        - 処理: 書籍CSV一括登録APIへmultipartでPOSTする。
+        - 期待値: 2冊の書籍と初期支店別所蔵が登録され、成功レスポンスが返ること。
+        """
+        csv_content = (
+            "カテゴリ,名前,著者,あらすじ,初期所蔵数,所蔵支店,ISBN,出版年月日\n"
+            "小説,こころ,夏目漱石,代表的な長編です。,2,中央図書館,9780000000101,2026-02-01\n"
+            '実用書,星めぐり,"夏目漱石、宮沢賢治",複数著者の本です。,3,東図書館,9780000000102,2026-02-02\n'
+        )
+        csv_file = SimpleUploadedFile(
+            "books.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            "/bookman/api/books/import-csv/",
+            {"municipality": self.municipality.id, "file": csv_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "success")
+        self.assertEqual(response.data["created_count"], 2)
+        self.assertEqual(response.data["failed_count"], 0)
+        self.assertEqual(response.data["errors"], [])
+        book = Book.objects.get(name="こころ")
+        self.assertEqual(book.isbn, "9780000000101")
+        self.assertTrue(
+            BranchBookStock.objects.filter(
+                book=book,
+                branch=self.branch,
+                amount=2,
+            ).exists()
+        )
+        self.assertEqual(
+            list(Book.objects.get(name="星めぐり").authors.order_by("id")),
+            [self.author, self.second_author],
+        )
+
+    def test_book_csv_import_returns_row_errors_and_creates_valid_rows(self):
+        """
+        シナリオ:
+        - 入力: 正常行、初期所蔵数不正行、既存ISBN重複行を含むCSV。
+        - 処理: 書籍CSV一括登録APIへmultipartでPOSTする。
+        - 期待値: 正常行だけ登録され、エラー行は行番号と項目名付きで返ること。
+        """
+        csv_content = (
+            "カテゴリ,名前,著者,あらすじ,初期所蔵数,所蔵支店,ISBN,出版年月日\n"
+            "小説,坊っちゃん別版,夏目漱石,登録できる行です。,1,中央図書館,9780000000103,2026-02-03\n"
+            "小説,銀河別版,宮沢賢治,冊数が不正です。,0,東図書館,9780000000104,2026-02-04\n"
+            "小説,既存ISBN本,夏目漱石,ISBNが重複です。,1,中央図書館,9780000000001,2026-02-05\n"
+        )
+        csv_file = SimpleUploadedFile(
+            "books.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            "/bookman/api/books/import-csv/",
+            {"municipality": self.municipality.id, "file": csv_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "partial_success")
+        self.assertEqual(response.data["created_count"], 1)
+        self.assertEqual(response.data["failed_count"], 2)
+        self.assertTrue(Book.objects.filter(name="坊っちゃん別版").exists())
+        self.assertFalse(Book.objects.filter(name="銀河別版").exists())
+        self.assertFalse(Book.objects.filter(name="既存ISBN本").exists())
+        self.assertIn(
+            {"row": 3, "field": "amount", "message": "この値は1以上にしてください。"},
+            response.data["errors"],
+        )
+        self.assertIn(
+            {
+                "row": 4,
+                "field": "isbn",
+                "message": "このISBNは既に登録されています。",
+            },
+            response.data["errors"],
+        )
+
+    def test_book_csv_import_returns_all_failed_response(self):
+        """
+        シナリオ:
+        - 入力: 存在しないカテゴリと存在しない支店を含むCSV。
+        - 処理: 書籍CSV一括登録APIへmultipartでPOSTする。
+        - 期待値: 400 が返り、書籍も支店別所蔵も作成されないこと。
+        """
+        csv_content = (
+            "カテゴリ,名前,著者,あらすじ,初期所蔵数,所蔵支店,ISBN,出版年月日\n"
+            "未知カテゴリ,未登録本,夏目漱石,登録できない行です。,1,未知支店,9780000000105,2026-02-06\n"
+        )
+        csv_file = SimpleUploadedFile(
+            "books.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            "/bookman/api/books/import-csv/",
+            {"municipality": self.municipality.id, "file": csv_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["created_count"], 0)
+        self.assertEqual(response.data["failed_count"], 1)
+        self.assertFalse(Book.objects.filter(name="未登録本").exists())
+        self.assertIn(
+            {
+                "row": 2,
+                "field": "category",
+                "message": "指定されたカテゴリが存在しません。",
+            },
+            response.data["errors"],
+        )
+        self.assertIn(
+            {"row": 2, "field": "branch", "message": "指定された支店が存在しません。"},
+            response.data["errors"],
+        )
+
+    def test_book_csv_import_rejects_missing_headers(self):
+        """
+        シナリオ:
+        - 入力: 必須ヘッダーが不足したCSV。
+        - 処理: 書籍CSV一括登録APIへmultipartでPOSTする。
+        - 期待値: 400 が返り、ヘッダー不備が機械的に表示できる形で返ること。
+        """
+        csv_content = "カテゴリ,名前\n小説,ヘッダー不足本\n"
+        csv_file = SimpleUploadedFile(
+            "books.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            "/bookman/api/books/import-csv/",
+            {"municipality": self.municipality.id, "file": csv_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["created_count"], 0)
+        self.assertEqual(response.data["failed_count"], 1)
+        self.assertEqual(response.data["errors"][0]["field"], "header")
+        self.assertIn("著者", response.data["errors"][0]["message"])
 
     def test_book_detail_returns_frontend_fields(self):
         """

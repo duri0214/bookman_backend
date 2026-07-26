@@ -58,6 +58,11 @@ urlpatterns = [
     ),
     path("api/books/", views.BookList.as_view(), name="book_list"),
     path("api/books/create/", views.BookCreate.as_view(), name="book_create"),
+    path(
+        "api/books/import-csv/",
+        views.BookCsvImport.as_view(),
+        name="book_csv_import",
+    ),
     path("api/books/<int:pk>/", views.BookDetail.as_view(), name="book_detail"),
     path(
         "api/branch-book-stocks/",
