@@ -21,3 +21,4 @@
 - `.codex/skills/` 配下の各 `SKILL.md` は参照スタブであり、実体は `../portfolio/.codex/skills/` にある。
 - ブランチ作成、コミット、PR、Issue 作成などの運用手順は `../portfolio/.codex/skills/` を参照する。
 - ユーザー依頼が skill の `description` に該当する場合は、該当 `SKILL.md` を読んでから作業する。
+- ユーザーが GitHub Issue URL を貼った場合は、`/$branch /$pull-request go` と同義の定型指示として扱う。対象 Issue からブランチを作成し、必要な変更、確認、コミット、push、PR 作成まで追加確認なしで進める。
