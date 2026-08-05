@@ -85,13 +85,20 @@ class ReservationService:
                 customer=reservation_input.customer,
             )
 
-    def cancel(self, *, reservation_id: int) -> Reservation:
+    def cancel(self, *, reservation_id: int, selected_municipality=None) -> Reservation:
         """
-        予約待ちまたは取り置き中の予約を取り消す。
+        選択中自治体内の予約待ちまたは取り置き中の予約を取り消す。
         """
         with transaction.atomic():
             reservation = self.reservation_repository.get_for_update(reservation_id)
             if reservation is None:
+                raise ReservationNotFoundError
+
+            if (
+                selected_municipality is not None
+                and reservation.branch_book_stock.branch.municipality_id
+                != selected_municipality.id
+            ):
                 raise ReservationNotFoundError
 
             if reservation.status not in self.reservation_repository.open_statuses:
@@ -107,15 +114,17 @@ class ReservationService:
 
         return reservation
 
-    def expire_due_holds(self) -> list[Reservation]:
+    def expire_due_holds(self, *, selected_municipality=None) -> list[Reservation]:
         """
-        期限切れの取り置きを expired にし、同じ支店別所蔵の次の予約を取り置きへ進める。
+        選択中自治体内で期限切れの取り置きを expired にし、次の予約を取り置きへ進める。
         """
         expired_reservations = []
         stocks_to_promote = []
 
         with transaction.atomic():
-            due_holds = self.reservation_repository.list_due_holds_for_update()
+            due_holds = self.reservation_repository.list_due_holds_for_update(
+                municipality=selected_municipality,
+            )
             for reservation in due_holds:
                 self.reservation_repository.save_status(
                     reservation,

@@ -123,7 +123,8 @@ class ReservationCancelSerializer(serializers.Serializer):
         """
         try:
             return ReservationService().cancel(
-                reservation_id=self.context["reservation_id"]
+                reservation_id=self.context["reservation_id"],
+                selected_municipality=self.context.get("municipality"),
             )
         except ReservationNotFoundError as exc:
             raise BusinessRuleApiError(
@@ -157,7 +158,9 @@ class ReservationExpireSerializer(serializers.Serializer):
         """
         取り置き期限切れ処理を実行する。
         """
-        expired_reservations = ReservationService().expire_due_holds()
+        expired_reservations = ReservationService().expire_due_holds(
+            selected_municipality=self.context.get("municipality"),
+        )
         return {
             "expired_count": len(expired_reservations),
             "expired_reservations": expired_reservations,

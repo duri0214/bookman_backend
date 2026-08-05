@@ -265,6 +265,26 @@ class LibraryStaffSerializer(serializers.ModelSerializer):
         model = LibraryStaff
         fields = ["id", "name", "branch", "role"]
 
+    def validate(self, attrs):
+        """
+        選択中自治体の支店に所属する職員だけを登録・更新の対象にする。
+        """
+        municipality = self.context.get("municipality")
+        branch = attrs.get("branch")
+        if self.instance is not None and branch is None:
+            branch = self.instance.branch
+
+        if (
+            municipality is not None
+            and branch is not None
+            and branch.municipality_id != municipality.id
+        ):
+            raise serializers.ValidationError(
+                {"branch": "選択中自治体の支店を指定してください。"}
+            )
+
+        return attrs
+
 
 class SearchConditionSerializer(serializers.ModelSerializer):
     """
