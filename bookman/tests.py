@@ -302,25 +302,25 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Municipality.objects.filter(id=municipality.id).exists())
 
-    def test_municipality_api_rejects_delete_with_branch_relations(self):
+    def test_municipality_api_cascades_delete_with_branch_relations(self):
         """
         シナリオ:
         - 入力: 支店が紐づいている自治体。
         - 処理: 自治体詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、自治体と支店の紐づきが維持されること。
+        - 期待値: 204 が返り、自治体と配下支店・所蔵・職員が削除されること。
         """
         response = self.client.delete(
             f"/bookman/api/municipalities/{self.municipality.id}/"
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["municipality"],
-            "支店が紐づく自治体は削除できません。",
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Municipality.objects.filter(id=self.municipality.id).exists())
+        self.assertFalse(Branch.objects.filter(id=self.branch.id).exists())
+        self.assertFalse(Branch.objects.filter(id=self.second_branch.id).exists())
+        self.assertFalse(
+            BranchBookStock.objects.filter(id=self.branch_stock.id).exists()
         )
-        self.assertTrue(Municipality.objects.filter(id=self.municipality.id).exists())
-        self.branch.refresh_from_db()
-        self.assertEqual(self.branch.municipality_id, self.municipality.id)
+        self.assertFalse(LibraryStaff.objects.filter(id=self.contact_staff.id).exists())
 
     def test_branch_list_returns_frontend_fields(self):
         """
@@ -516,24 +516,21 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Branch.objects.filter(id=branch.id).exists())
 
-    def test_branch_api_rejects_delete_with_stock_relations(self):
+    def test_branch_api_cascades_delete_with_stock_relations(self):
         """
         シナリオ:
         - 入力: 所蔵情報が紐づいている支店。
         - 処理: 支店詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、支店と所蔵情報が維持されること。
+        - 期待値: 204 が返り、支店と所蔵情報・所属職員が削除されること。
         """
         response = self.client.delete(f"/bookman/api/branches/{self.branch.id}/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["branch"],
-            "所蔵情報が紐づく支店は削除できません。",
-        )
-        self.assertTrue(Branch.objects.filter(id=self.branch.id).exists())
-        self.assertTrue(
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Branch.objects.filter(id=self.branch.id).exists())
+        self.assertFalse(
             BranchBookStock.objects.filter(id=self.branch_stock.id).exists()
         )
+        self.assertFalse(LibraryStaff.objects.filter(id=self.contact_staff.id).exists())
 
     def test_branch_update_rejects_too_long_phone_number(self):
         """
@@ -1601,22 +1598,18 @@ class BookmanApiTest(APITestCase):
         self.assertFalse(Book.objects.filter(id=book.id).exists())
         self.assertTrue(Author.objects.filter(id=self.author.id).exists())
 
-    def test_book_api_rejects_delete_with_stock_relations(self):
+    def test_book_api_cascades_delete_with_stock_relations(self):
         """
         シナリオ:
         - 入力: 支店別所蔵が紐づいている書籍。
         - 処理: 書籍詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、書籍と所蔵情報が維持されること。
+        - 期待値: 204 が返り、書籍と所蔵情報が削除されること。
         """
         response = self.client.delete(f"/bookman/api/books/{self.book.id}/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["book"],
-            "所蔵情報が紐づく書籍は削除できません。",
-        )
-        self.assertTrue(Book.objects.filter(id=self.book.id).exists())
-        self.assertTrue(
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Book.objects.filter(id=self.book.id).exists())
+        self.assertFalse(
             BranchBookStock.objects.filter(id=self.branch_stock.id).exists()
         )
 
@@ -2380,12 +2373,12 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Customer.objects.filter(id=customer.id).exists())
 
-    def test_customer_api_rejects_delete_with_lending_relations(self):
+    def test_customer_api_cascades_delete_with_lending_relations(self):
         """
         シナリオ:
         - 入力: 貸出情報が紐づいている利用者。
         - 処理: 利用者詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、利用者と貸出情報が維持されること。
+        - 期待値: 204 が返り、利用者と貸出情報が削除されること。
         """
         lending = Lending.objects.create(
             branch_book_stock=self.branch_stock,
@@ -2396,13 +2389,9 @@ class BookmanApiTest(APITestCase):
 
         response = self.client.delete(f"/bookman/api/customers/{self.customer.id}/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["customer"],
-            "貸出情報が紐づく利用者は削除できません。",
-        )
-        self.assertTrue(Customer.objects.filter(id=self.customer.id).exists())
-        self.assertTrue(Lending.objects.filter(id=lending.id).exists())
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Customer.objects.filter(id=self.customer.id).exists())
+        self.assertFalse(Lending.objects.filter(id=lending.id).exists())
 
     def test_customer_update_rejects_blank_duplicate_name_and_zero_lending_limit(self):
         """
@@ -2558,12 +2547,12 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(LibraryStaff.objects.filter(id=staff.id).exists())
 
-    def test_staff_api_rejects_delete_with_lending_relations(self):
+    def test_staff_api_cascades_delete_with_lending_relations(self):
         """
         シナリオ:
         - 入力: 貸出情報が紐づいている職員。
         - 処理: 職員詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、職員と貸出情報が維持されること。
+        - 期待値: 204 が返り、職員と貸出情報が削除されること。
         """
         lending = Lending.objects.create(
             branch_book_stock=self.branch_stock,
@@ -2574,13 +2563,9 @@ class BookmanApiTest(APITestCase):
 
         response = self.client.delete(f"/bookman/api/staff/{self.contact_staff.id}/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["staff"],
-            "貸出情報が紐づく職員は削除できません。",
-        )
-        self.assertTrue(LibraryStaff.objects.filter(id=self.contact_staff.id).exists())
-        self.assertTrue(Lending.objects.filter(id=lending.id).exists())
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(LibraryStaff.objects.filter(id=self.contact_staff.id).exists())
+        self.assertFalse(Lending.objects.filter(id=lending.id).exists())
 
     def test_staff_update_rejects_invalid_role(self):
         """
@@ -3699,22 +3684,21 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Author.objects.filter(id=author.id).exists())
 
-    def test_author_api_rejects_delete_with_book_relations(self):
+    def test_author_api_cascades_delete_with_book_relations(self):
         """
         シナリオ:
         - 入力: 書籍が紐づいている著者。
         - 処理: 著者詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、著者と書籍の紐づきが維持されること。
+        - 期待値: 204 が返り、著者と関連書籍・所蔵情報が削除されること。
         """
         response = self.client.delete(f"/bookman/api/authors/{self.author.id}/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["author"],
-            "書籍が紐づく著者は削除できません。",
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Author.objects.filter(id=self.author.id).exists())
+        self.assertFalse(Book.objects.filter(id=self.book.id).exists())
+        self.assertFalse(
+            BranchBookStock.objects.filter(id=self.branch_stock.id).exists()
         )
-        self.assertTrue(Author.objects.filter(id=self.author.id).exists())
-        self.assertTrue(self.book.authors.filter(id=self.author.id).exists())
 
     def test_category_api_create_retrieve_and_update(self):
         """
@@ -3836,20 +3820,18 @@ class BookmanApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Category.objects.filter(id=category.id).exists())
 
-    def test_category_api_rejects_delete_with_book_relations(self):
+    def test_category_api_cascades_delete_with_book_relations(self):
         """
         シナリオ:
         - 入力: 書籍が紐づいているカテゴリ。
         - 処理: カテゴリ詳細APIへDELETEリクエストする。
-        - 期待値: 400 が返り、カテゴリと書籍が維持されること。
+        - 期待値: 204 が返り、カテゴリと関連書籍・所蔵情報が削除されること。
         """
         response = self.client.delete(f"/bookman/api/categories/{self.category.id}/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data["category"],
-            "書籍が紐づくカテゴリは削除できません。",
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Category.objects.filter(id=self.category.id).exists())
+        self.assertFalse(Book.objects.filter(id=self.book.id).exists())
+        self.assertFalse(
+            BranchBookStock.objects.filter(id=self.branch_stock.id).exists()
         )
-        self.assertTrue(Category.objects.filter(id=self.category.id).exists())
-        self.book.refresh_from_db()
-        self.assertEqual(self.book.category_id, self.category.id)

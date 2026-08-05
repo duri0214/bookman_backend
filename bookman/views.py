@@ -1,4 +1,5 @@
-from django.db.models import Count, Prefetch, ProtectedError, Q, Sum
+from django.db import transaction
+from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -87,26 +88,47 @@ class RequiredMunicipalityMutationMixin:
         return context
 
 
-class ProtectedMasterDestroyMixin:
+def delete_staff_with_relations(staff):
     """
-    管理マスタ削除時に関連データの巻き込み削除を拒否する。
+    職員に紐づく保存条件を消してから職員を削除する。
     """
+    staff.search_conditions.all().delete()
+    staff.delete()
 
-    protected_relation_messages = []
-    protected_error_field = "detail"
-    protected_error_message = "関連データがあるため削除できません。"
 
-    def perform_destroy(self, instance):
-        for relation_name, field_name, message in self.protected_relation_messages:
-            if getattr(instance, relation_name).exists():
-                raise ValidationError({field_name: message})
+def delete_branch_with_relations(branch):
+    """
+    支店に紐づく保護関係を先に消してから支店を削除する。
+    """
+    branch.search_conditions.all().delete()
+    for staff in branch.staff_members.all():
+        delete_staff_with_relations(staff)
+    branch.delete()
 
-        try:
-            instance.delete()
-        except ProtectedError as exc:
-            raise ValidationError(
-                {self.protected_error_field: self.protected_error_message}
-            ) from exc
+
+def delete_book_with_relations(book):
+    """
+    書籍を削除し、支店別所蔵と貸出・予約をDBカスケードに任せる。
+    """
+    book.delete()
+
+
+def delete_category_with_relations(category):
+    """
+    カテゴリに紐づく書籍を消してからカテゴリを削除する。
+    """
+    for book in category.book_set.all():
+        delete_book_with_relations(book)
+    category.delete()
+
+
+def delete_author_with_relations(author):
+    """
+    著者に紐づく書籍を消してから著者を削除する。
+    """
+    for book in author.book_set.all():
+        delete_book_with_relations(book)
+    author.delete()
 
 
 class MunicipalityList(generics.ListCreateAPIView):
@@ -123,12 +145,10 @@ class MunicipalityDetail(generics.RetrieveUpdateDestroyAPIView):
         return Municipality.objects.order_by("id")
 
     def perform_destroy(self, instance):
-        try:
+        with transaction.atomic():
+            for branch in instance.branches.all():
+                delete_branch_with_relations(branch)
             instance.delete()
-        except ProtectedError as exc:
-            raise ValidationError(
-                {"municipality": "支店が紐づく自治体は削除できません。"}
-            ) from exc
 
 
 class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
@@ -169,18 +189,9 @@ class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
 
 class BranchDetail(
     RequiredMunicipalityMutationMixin,
-    ProtectedMasterDestroyMixin,
     generics.RetrieveUpdateDestroyAPIView,
 ):
     serializer_class = BranchSerializer
-    protected_relation_messages = [
-        ("book_stocks", "branch", "所蔵情報が紐づく支店は削除できません。"),
-        ("staff_members", "branch", "職員が紐づく支店は削除できません。"),
-        ("closed_days", "branch", "休館日が紐づく支店は削除できません。"),
-        ("search_conditions", "branch", "保存条件が紐づく支店は削除できません。"),
-    ]
-    protected_error_field = "branch"
-    protected_error_message = "関連データが紐づく支店は削除できません。"
 
     def get_mutation_municipality_id(self):
         municipality_id = self.request.query_params.get("municipality")
@@ -204,6 +215,10 @@ class BranchDetail(
             queryset = queryset.filter(municipality=municipality)
 
         return queryset
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_branch_with_relations(instance)
 
 
 class BranchClosedDayList(
@@ -245,16 +260,8 @@ class CustomerList(generics.ListCreateAPIView):
         return Customer.objects.order_by("id")
 
 
-class CustomerDetail(
-    ProtectedMasterDestroyMixin, generics.RetrieveUpdateDestroyAPIView
-):
+class CustomerDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CustomerSerializer
-    protected_relation_messages = [
-        ("lendings", "customer", "貸出情報が紐づく利用者は削除できません。"),
-        ("reservations", "customer", "予約情報が紐づく利用者は削除できません。"),
-    ]
-    protected_error_field = "customer"
-    protected_error_message = "関連データが紐づく利用者は削除できません。"
 
     def get_queryset(self):
         return Customer.objects.order_by("id")
@@ -275,19 +282,16 @@ class LibraryStaffList(generics.ListCreateAPIView):
 
 
 class LibraryStaffDetail(
-    ProtectedMasterDestroyMixin,
     generics.RetrieveUpdateDestroyAPIView,
 ):
     serializer_class = LibraryStaffSerializer
-    protected_relation_messages = [
-        ("contact", "staff", "貸出情報が紐づく職員は削除できません。"),
-        ("search_conditions", "staff", "保存条件が紐づく職員は削除できません。"),
-    ]
-    protected_error_field = "staff"
-    protected_error_message = "関連データが紐づく職員は削除できません。"
 
     def get_queryset(self):
         return LibraryStaff.objects.select_related("branch")
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_staff_with_relations(instance)
 
 
 class SearchConditionAccessMixin:
@@ -432,16 +436,15 @@ class AuthorList(generics.ListCreateAPIView):
         return Author.objects.order_by("id")
 
 
-class AuthorDetail(ProtectedMasterDestroyMixin, generics.RetrieveUpdateDestroyAPIView):
+class AuthorDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AuthorSerializer
-    protected_relation_messages = [
-        ("book_set", "author", "書籍が紐づく著者は削除できません。"),
-    ]
-    protected_error_field = "author"
-    protected_error_message = "関連データが紐づく著者は削除できません。"
 
     def get_queryset(self):
         return Author.objects.order_by("id")
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_author_with_relations(instance)
 
 
 class CategoryList(generics.ListCreateAPIView):
@@ -451,15 +454,15 @@ class CategoryList(generics.ListCreateAPIView):
         return Category.objects.order_by("id")
 
 
-class CategoryDetail(
-    ProtectedMasterDestroyMixin, generics.RetrieveUpdateDestroyAPIView
-):
+class CategoryDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CategorySerializer
-    protected_error_field = "category"
-    protected_error_message = "書籍が紐づくカテゴリは削除できません。"
 
     def get_queryset(self):
         return Category.objects.order_by("id")
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_category_with_relations(instance)
 
 
 class BookList(generics.ListAPIView):
@@ -543,13 +546,8 @@ class BookCsvImport(generics.GenericAPIView):
         return Response(result, status=response_status)
 
 
-class BookDetail(ProtectedMasterDestroyMixin, generics.RetrieveUpdateDestroyAPIView):
+class BookDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BookSerializer
-    protected_relation_messages = [
-        ("branch_stocks", "book", "所蔵情報が紐づく書籍は削除できません。"),
-    ]
-    protected_error_field = "book"
-    protected_error_message = "関連データが紐づく書籍は削除できません。"
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
