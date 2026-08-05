@@ -1,4 +1,5 @@
-from django.db.models import Count, Prefetch, ProtectedError, Q, Sum
+from django.db import transaction
+from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -87,6 +88,49 @@ class RequiredMunicipalityMutationMixin:
         return context
 
 
+def delete_staff_with_relations(staff):
+    """
+    職員に紐づく保存条件を消してから職員を削除する。
+    """
+    staff.search_conditions.all().delete()
+    staff.delete()
+
+
+def delete_branch_with_relations(branch):
+    """
+    支店に紐づく保護関係を先に消してから支店を削除する。
+    """
+    branch.search_conditions.all().delete()
+    for staff in branch.staff_members.all():
+        delete_staff_with_relations(staff)
+    branch.delete()
+
+
+def delete_book_with_relations(book):
+    """
+    書籍を削除し、支店別所蔵と貸出・予約をDBカスケードに任せる。
+    """
+    book.delete()
+
+
+def delete_category_with_relations(category):
+    """
+    カテゴリに紐づく書籍を消してからカテゴリを削除する。
+    """
+    for book in category.book_set.all():
+        delete_book_with_relations(book)
+    category.delete()
+
+
+def delete_author_with_relations(author):
+    """
+    著者に紐づく書籍を消してから著者を削除する。
+    """
+    for book in author.book_set.all():
+        delete_book_with_relations(book)
+    author.delete()
+
+
 class MunicipalityList(generics.ListCreateAPIView):
     serializer_class = MunicipalitySerializer
 
@@ -101,12 +145,10 @@ class MunicipalityDetail(generics.RetrieveUpdateDestroyAPIView):
         return Municipality.objects.order_by("id")
 
     def perform_destroy(self, instance):
-        try:
+        with transaction.atomic():
+            for branch in instance.branches.all():
+                delete_branch_with_relations(branch)
             instance.delete()
-        except ProtectedError as exc:
-            raise ValidationError(
-                {"municipality": "支店が紐づく自治体は削除できません。"}
-            ) from exc
 
 
 class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
@@ -145,7 +187,10 @@ class BranchList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
         serializer.save(municipality=municipality)
 
 
-class BranchDetail(RequiredMunicipalityMutationMixin, generics.RetrieveUpdateAPIView):
+class BranchDetail(
+    RequiredMunicipalityMutationMixin,
+    generics.RetrieveUpdateDestroyAPIView,
+):
     serializer_class = BranchSerializer
 
     def get_mutation_municipality_id(self):
@@ -170,6 +215,10 @@ class BranchDetail(RequiredMunicipalityMutationMixin, generics.RetrieveUpdateAPI
             queryset = queryset.filter(municipality=municipality)
 
         return queryset
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_branch_with_relations(instance)
 
 
 class BranchClosedDayList(
@@ -211,7 +260,7 @@ class CustomerList(generics.ListCreateAPIView):
         return Customer.objects.order_by("id")
 
 
-class CustomerDetail(generics.RetrieveUpdateAPIView):
+class CustomerDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CustomerSerializer
 
     def get_queryset(self):
@@ -232,11 +281,17 @@ class LibraryStaffList(generics.ListCreateAPIView):
         return queryset
 
 
-class LibraryStaffDetail(generics.RetrieveUpdateAPIView):
+class LibraryStaffDetail(
+    generics.RetrieveUpdateDestroyAPIView,
+):
     serializer_class = LibraryStaffSerializer
 
     def get_queryset(self):
         return LibraryStaff.objects.select_related("branch")
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_staff_with_relations(instance)
 
 
 class SearchConditionAccessMixin:
@@ -381,11 +436,15 @@ class AuthorList(generics.ListCreateAPIView):
         return Author.objects.order_by("id")
 
 
-class AuthorDetail(generics.RetrieveUpdateAPIView):
+class AuthorDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AuthorSerializer
 
     def get_queryset(self):
         return Author.objects.order_by("id")
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_author_with_relations(instance)
 
 
 class CategoryList(generics.ListCreateAPIView):
@@ -395,11 +454,15 @@ class CategoryList(generics.ListCreateAPIView):
         return Category.objects.order_by("id")
 
 
-class CategoryDetail(generics.RetrieveUpdateAPIView):
+class CategoryDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CategorySerializer
 
     def get_queryset(self):
         return Category.objects.order_by("id")
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            delete_category_with_relations(instance)
 
 
 class BookList(generics.ListAPIView):
@@ -483,7 +546,7 @@ class BookCsvImport(generics.GenericAPIView):
         return Response(result, status=response_status)
 
 
-class BookDetail(generics.RetrieveUpdateAPIView):
+class BookDetail(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BookSerializer
 
     def get_serializer_context(self):
