@@ -139,8 +139,20 @@ class BranchBookStockTransferSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         """
-        同一支店への移動と自治体をまたぐ移動を拒否する。
+        同一支店への移動、自治体をまたぐ移動、選択中自治体外の移動を拒否する。
         """
+        municipality = self.context.get("municipality")
+        from_branch = attrs.get("from_branch")
+        to_branch = attrs.get("to_branch")
+        if municipality is not None and from_branch.municipality_id != municipality.id:
+            raise serializers.ValidationError(
+                {"from_branch": "選択中自治体の支店を指定してください。"}
+            )
+        if municipality is not None and to_branch.municipality_id != municipality.id:
+            raise serializers.ValidationError(
+                {"to_branch": "選択中自治体の支店を指定してください。"}
+            )
+
         try:
             BranchBookStockTransferService().validate_transfer_request(
                 BranchBookStockTransferInput(**attrs)

@@ -95,19 +95,24 @@ class ReservationRepository:
             .first()
         )
 
-    def list_due_holds_for_update(self) -> list[Reservation]:
+    def list_due_holds_for_update(self, *, municipality=None) -> list[Reservation]:
         """
         取り置き期限を過ぎた予約を行ロック付きで返す。
         """
         today = timezone.localdate()
-        return list(
-            Reservation.objects.select_for_update()
-            .filter(
-                status=Reservation.Status.HELD,
-                hold_expires_on__lt=today,
+        queryset = Reservation.objects.select_for_update().filter(
+            status=Reservation.Status.HELD,
+            hold_expires_on__lt=today,
+        )
+        if municipality is not None:
+            queryset = queryset.filter(
+                branch_book_stock__branch__municipality=municipality
             )
-            .select_related("branch_book_stock")
-            .order_by("branch_book_stock_id", "created_at", "id")
+
+        return list(
+            queryset.select_related("branch_book_stock").order_by(
+                "branch_book_stock_id", "created_at", "id"
+            )
         )
 
     def hold(self, reservation: Reservation) -> None:

@@ -190,7 +190,10 @@ class LendingReturnSerializer(serializers.Serializer):
         返却の業務処理を実行する。
         """
         try:
-            return LendingService().return_lending(lending_id=validated_data["lending"])
+            return LendingService().return_lending(
+                lending_id=validated_data["lending"],
+                selected_municipality=self.context.get("municipality"),
+            )
         except LendingNotFoundError as exc:
             raise BusinessRuleApiError(
                 code="lending_not_found",

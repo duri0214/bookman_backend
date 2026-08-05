@@ -152,13 +152,25 @@ class LendingService:
 
         return adjusted_date, "、".join(closed_reasons)
 
-    def return_lending(self, *, lending_id: int) -> LendingReturn:
+    def return_lending(
+        self,
+        *,
+        lending_id: int,
+        selected_municipality=None,
+    ) -> LendingReturn:
         """
-        貸出中の貸出情報を返却済みに更新する。
+        選択中自治体内の貸出中情報を返却済みに更新する。
         """
         with transaction.atomic():
             lending = self.lending_repository.get_for_update(lending_id)
             if lending is None:
+                raise LendingNotFoundError
+
+            if (
+                selected_municipality is not None
+                and lending.branch_book_stock.branch.municipality_id
+                != selected_municipality.id
+            ):
                 raise LendingNotFoundError
 
             if not lending.active:

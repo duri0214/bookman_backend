@@ -246,11 +246,15 @@ class BranchClosedDayList(
         return queryset
 
 
-class BranchClosedDayDetail(generics.DestroyAPIView):
+class BranchClosedDayDetail(RequiredMunicipalityMutationMixin, generics.DestroyAPIView):
     serializer_class = BranchClosedDaySerializer
 
     def get_queryset(self):
-        return BranchClosedDay.objects.select_related("branch")
+        queryset = BranchClosedDay.objects.select_related("branch")
+        if self.request.method not in SAFE_METHODS:
+            municipality = self.get_required_municipality()
+            queryset = queryset.filter(branch__municipality=municipality)
+        return queryset
 
 
 class CustomerList(generics.ListCreateAPIView):
@@ -267,7 +271,7 @@ class CustomerDetail(generics.RetrieveUpdateDestroyAPIView):
         return Customer.objects.order_by("id")
 
 
-class LibraryStaffList(generics.ListCreateAPIView):
+class LibraryStaffList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView):
     serializer_class = LibraryStaffSerializer
 
     def get_queryset(self):
@@ -282,12 +286,25 @@ class LibraryStaffList(generics.ListCreateAPIView):
 
 
 class LibraryStaffDetail(
+    RequiredMunicipalityMutationMixin,
     generics.RetrieveUpdateDestroyAPIView,
 ):
     serializer_class = LibraryStaffSerializer
 
     def get_queryset(self):
-        return LibraryStaff.objects.select_related("branch")
+        queryset = LibraryStaff.objects.select_related("branch")
+        if self.request.method not in SAFE_METHODS:
+            municipality = self.get_required_municipality()
+            queryset = queryset.filter(branch__municipality=municipality)
+            return queryset
+
+        municipality = get_request_municipality(self.request)
+        if municipality is None and has_municipality_query(self.request):
+            return queryset.none()
+        if municipality is not None:
+            queryset = queryset.filter(branch__municipality=municipality)
+
+        return queryset
 
     def perform_destroy(self, instance):
         with transaction.atomic():
@@ -662,7 +679,9 @@ class BranchBookStockDetail(
         return queryset
 
 
-class BranchBookStockTransfer(generics.GenericAPIView):
+class BranchBookStockTransfer(
+    RequiredMunicipalityMutationMixin, generics.GenericAPIView
+):
     serializer_class = BranchBookStockTransferSerializer
 
     def post(self, request):
@@ -709,11 +728,14 @@ class LendingList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIView)
         )
 
 
-class LendingReturn(generics.GenericAPIView):
+class LendingReturn(RequiredMunicipalityMutationMixin, generics.GenericAPIView):
     serializer_class = LendingReturnSerializer
 
     def post(self, request):
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(
+            data=request.data,
+            context={"municipality": self.get_required_municipality()},
+        )
         serializer.is_valid(raise_exception=True)
         try:
             result = serializer.save()
@@ -759,13 +781,16 @@ class ReservationList(RequiredMunicipalityMutationMixin, generics.ListCreateAPIV
         )
 
 
-class ReservationCancel(generics.GenericAPIView):
+class ReservationCancel(RequiredMunicipalityMutationMixin, generics.GenericAPIView):
     serializer_class = ReservationCancelSerializer
 
     def post(self, request, pk):
         serializer = self.get_serializer(
             data=request.data,
-            context={"reservation_id": pk},
+            context={
+                "reservation_id": pk,
+                "municipality": self.get_required_municipality(),
+            },
         )
         serializer.is_valid(raise_exception=True)
         try:
@@ -779,11 +804,14 @@ class ReservationCancel(generics.GenericAPIView):
         )
 
 
-class ReservationExpire(generics.GenericAPIView):
+class ReservationExpire(RequiredMunicipalityMutationMixin, generics.GenericAPIView):
     serializer_class = ReservationExpireSerializer
 
     def post(self, request):
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(
+            data=request.data,
+            context={"municipality": self.get_required_municipality()},
+        )
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
         return Response(
