@@ -96,8 +96,6 @@ chmod +x scripts/import_data.sh
 ./scripts/import_data.sh
 ```
 
-投入スクリプトはデータを削除せず、依存関係のある順番で全 Bookman fixture を読み込みます。
-
 第二期の画面確認用 fixture では、以下の状態をまとめて確認できます。
 
 - すべての本に支店別所蔵があり、同じ本が複数支店にある状態
