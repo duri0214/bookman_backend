@@ -82,19 +82,21 @@ migration の未生成差分を確認します。
 python manage.py makemigrations --check --dry-run
 ```
 
-開発・デモ用 DB のデータを入れ直す場合は、`scripts/import_data.ps1`（Windows）または
-`scripts/import_data.sh`（Linux）を実行します。この処理は既存データを削除するため、通常の更新や本番 DB では実行しないでください。
+開発・デモ用 DB のデータを入れ直す場合は、既存データの削除と fixture 投入を別々に実行します。
+`flush` は既存データを削除するため、実行前に対象 DB を確認してください。
 
 ```console
 # Windows PowerShell
+python manage.py flush --noinput
 .\scripts\import_data.ps1
 
 # Linux
+python manage.py flush --noinput
 chmod +x scripts/import_data.sh
 ./scripts/import_data.sh
 ```
 
-スクリプトは `flush --noinput` の後、依存関係のある順番で全 Bookman fixture を読み込みます。
+投入スクリプトはデータを削除せず、依存関係のある順番で全 Bookman fixture を読み込みます。
 
 第二期の画面確認用 fixture では、以下の状態をまとめて確認できます。
 
@@ -183,22 +185,4 @@ DB へ migration を適用できるか確認する場合は、MySQL 接続情報
 
 ```console
 python manage.py migrate --noinput
-```
-
-## 本番反映
-
-本番サーバーではリポジトリを pull した後、仮想環境を有効化して確認と migration を行います。
-fixture を入れ直す場合だけ、データを削除する `scripts/import_data.sh` を実行してください。
-
-```bash
-cd /var/www/html/bookman_backend
-git fetch --prune origin
-git pull
-source venv/bin/activate
-python manage.py check
-python manage.py migrate
-
-# データを入れ直す場合だけ実行する
-chmod +x scripts/import_data.sh
-./scripts/import_data.sh
 ```

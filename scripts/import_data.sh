@@ -6,7 +6,6 @@ if [[ ! -f "manage.py" ]]; then
   exit 1
 fi
 
-python manage.py flush --noinput
 python manage.py loaddata \
   bookman/fixtures/municipality-data.json \
   bookman/fixtures/branch-data.json \

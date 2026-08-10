@@ -5,7 +5,6 @@ if (-not (Test-Path "manage.py")) {
   throw "manage.py が見つかりません。リポジトリのルートで実行してください。"
 }
 
-python manage.py flush --noinput
 python manage.py loaddata `
   bookman/fixtures/municipality-data.json `
   bookman/fixtures/branch-data.json `
