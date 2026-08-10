@@ -82,31 +82,19 @@ migration の未生成差分を確認します。
 python manage.py makemigrations --check --dry-run
 ```
 
-開発用 DB のデータを入れ直す場合は、Django 管理下のテーブルを空にしてから初期データを読み込みます。
+開発・デモ用 DB のデータを入れ直す場合は、`scripts/import_data.ps1`（Windows）または
+`scripts/import_data.sh`（Linux）を実行します。この処理は既存データを削除するため、通常の更新や本番 DB では実行しないでください。
 
 ```console
-python manage.py flush --noinput
+# Windows PowerShell
+.\scripts\import_data.ps1
+
+# Linux
+chmod +x scripts/import_data.sh
+./scripts/import_data.sh
 ```
 
-`flush` は既存データを削除します。開発用 DB だけで実行し、本番 DB や共有 DB では実行しないでください。
-MySQL では通常、主キーの自動採番もリセットされます。テーブル定義や migration 状態から作り直したい場合は、DB を作り直してから `python manage.py migrate` を実行してください。
-
-初期データを読み込みます。
-
-```console
-python manage.py loaddata bookman/fixtures/municipality-data.json
-python manage.py loaddata bookman/fixtures/branch-data.json
-python manage.py loaddata bookman/fixtures/category-data.json
-python manage.py loaddata bookman/fixtures/author-data.json
-python manage.py loaddata bookman/fixtures/book-data.json
-python manage.py loaddata bookman/fixtures/branch-book-stock-data.json
-python manage.py loaddata bookman/fixtures/customer-data.json
-python manage.py loaddata bookman/fixtures/library-staff-data.json
-python manage.py loaddata bookman/fixtures/branch-closed-day-data.json
-python manage.py loaddata bookman/fixtures/lending-data.json
-python manage.py loaddata bookman/fixtures/reservation-data.json
-python manage.py loaddata bookman/fixtures/search-condition-data.json
-```
+スクリプトは `flush --noinput` の後、依存関係のある順番で全 Bookman fixture を読み込みます。
 
 第二期の画面確認用 fixture では、以下の状態をまとめて確認できます。
 
@@ -195,4 +183,22 @@ DB へ migration を適用できるか確認する場合は、MySQL 接続情報
 
 ```console
 python manage.py migrate --noinput
+```
+
+## 本番反映
+
+本番サーバーではリポジトリを pull した後、仮想環境を有効化して確認と migration を行います。
+fixture を入れ直す場合だけ、データを削除する `scripts/import_data.sh` を実行してください。
+
+```bash
+cd /var/www/html/bookman_backend
+git fetch --prune origin
+git pull
+source venv/bin/activate
+python manage.py check
+python manage.py migrate
+
+# データを入れ直す場合だけ実行する
+chmod +x scripts/import_data.sh
+./scripts/import_data.sh
 ```
