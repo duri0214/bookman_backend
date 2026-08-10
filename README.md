@@ -82,30 +82,18 @@ migration の未生成差分を確認します。
 python manage.py makemigrations --check --dry-run
 ```
 
-開発用 DB のデータを入れ直す場合は、Django 管理下のテーブルを空にしてから初期データを読み込みます。
+開発・デモ用 DB のデータを入れ直す場合は、既存データの削除と fixture 投入を別々に実行します。
+`flush` は既存データを削除するため、実行前に対象 DB を確認してください。
 
 ```console
+# Windows PowerShell
 python manage.py flush --noinput
-```
+.\scripts\import_data.ps1
 
-`flush` は既存データを削除します。開発用 DB だけで実行し、本番 DB や共有 DB では実行しないでください。
-MySQL では通常、主キーの自動採番もリセットされます。テーブル定義や migration 状態から作り直したい場合は、DB を作り直してから `python manage.py migrate` を実行してください。
-
-初期データを読み込みます。
-
-```console
-python manage.py loaddata bookman/fixtures/municipality-data.json
-python manage.py loaddata bookman/fixtures/branch-data.json
-python manage.py loaddata bookman/fixtures/category-data.json
-python manage.py loaddata bookman/fixtures/author-data.json
-python manage.py loaddata bookman/fixtures/book-data.json
-python manage.py loaddata bookman/fixtures/branch-book-stock-data.json
-python manage.py loaddata bookman/fixtures/customer-data.json
-python manage.py loaddata bookman/fixtures/library-staff-data.json
-python manage.py loaddata bookman/fixtures/branch-closed-day-data.json
-python manage.py loaddata bookman/fixtures/lending-data.json
-python manage.py loaddata bookman/fixtures/reservation-data.json
-python manage.py loaddata bookman/fixtures/search-condition-data.json
+# Linux
+python manage.py flush --noinput
+chmod +x scripts/import_data.sh
+./scripts/import_data.sh
 ```
 
 第二期の画面確認用 fixture では、以下の状態をまとめて確認できます。
